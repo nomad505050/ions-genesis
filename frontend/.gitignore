@@ -1,0 +1,82 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+.venv/
+venv/
+env/
+ENV/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.vercel
+
+# Docker
+.docker/
+
+# Database
+*.sql
+*.dump
+*.sqlite
+*.db
+
+# Data files — large extraction outputs not for version control
+cognis_candidates.json
+book_candidates.json
+book_cbb_ids.json
+abr_cbb_ids.json
+d2brain_candidates.json
+benchmark_results.json
+benchmark_results*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets
+*.pem
+*.key
+*.cert
