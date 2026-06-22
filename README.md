@@ -259,6 +259,18 @@ GET /.well-known/ions-node.json
 
 Update `public_api_base` in `backend/main.py` to your public URL before deploying.
 
+### Joining the Network
+
+Once your node is running at a public URL, register it with any existing IONS node:
+
+```bash
+curl -X POST https://known-node.example.com/nodes/register \
+  -H "Content-Type: application/json" \
+  -d '{"node_id": "your_node_id", "public_api_base": "https://your-node.example.com"}'
+```
+
+Your node will be discovered via its manifest, added to the registry, and queries on that node will automatically traverse your CBBs as part of federated paths.
+
 ---
 
 ## Generating Relationships
@@ -343,16 +355,19 @@ ions-genesis/
 
 ---
 
-## Deferred — Future Protocol
+## Protocol Status
 
 | Feature | Status |
 |---|---|
-| Multi-node federation | Deferred — node manifest is ready |
-| Token / reward mechanics | Deferred |
-| Rights and attribution claims | Experimental — framework in place |
-| Automated relationship generation on approval | Deferred — manual generation available |
-| Network-derived reputation scoring | Deferred |
-| Multiple CBB types (observation, procedure, outcome) | Deferred — claim proven first |
+| Multi-node federation | ✅ Live — node registry, manifest, federated query |
+| Server-side relationship generation | ✅ Live — `POST /relationship/generate` |
+| Node manifest | ✅ Live — `GET /.well-known/ions-node.json` |
+| Path registry | ✅ Live — `GET /path/{id}` |
+| Rights and attribution claims | 🔬 Experimental — framework in place, claims coming soon |
+| Token / reward mechanics | 🔜 Future |
+| Automated relationship generation on CBB approval | 🔜 Future |
+| Network-derived reputation scoring | 🔜 Future |
+| Multiple CBB types (observation, procedure, outcome) | 🔜 Future — claim type proven first |
 
 ---
 
