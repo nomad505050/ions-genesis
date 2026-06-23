@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.core.database import get_db
 from app.core.config import settings
-from app.services.traversal import discover_starting_cbbs, enumerate_paths, score_path
+from app.services.traversal import discover_starting_cbbs, enumerate_paths, score_paths_batch, get_all_published_relationships
 from app.services.synthesis import synthesize_answer, raw_llm_answer
 from app.services.hashing import canonical_hash
 from app.models.artifacts import ReasoningPath, NodeRegistry
@@ -67,21 +67,25 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
     # Run raw LLM answer and local traversal
     raw_answer_task = asyncio.create_task(raw_llm_answer(payload.query, model))
 
-    # Local traversal
+    # Local traversal — load relationships once then reuse
     starts = await discover_starting_cbbs(payload.query, db)
+    rel_index = await get_all_published_relationships(db)
+
     all_paths = []
     for start in starts:
         paths = await enumerate_paths(
             start,
             db,
             max_depth=payload.max_depth,
-            include_contradictions=payload.include_contradictions
+            include_contradictions=payload.include_contradictions,
+            rel_index=rel_index
         )
         all_paths.extend(paths)
 
+    # Batch score all paths in two queries instead of N*M queries
+    local_scored_raw = await score_paths_batch(all_paths, db)
     local_scored = []
-    for path in all_paths:
-        scored_path = await score_path(path, db)
+    for scored_path in local_scored_raw:
         scored_path["source_node"] = settings.node_id
         scored_path["source_node_url"] = settings.public_api_base
         local_scored.append(scored_path)
