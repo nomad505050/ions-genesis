@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.services.traversal import discover_starting_cbbs, enumerate_paths, score_paths_batch, get_all_published_relationships
 from app.services.synthesis import synthesize_answer, raw_llm_answer
+from app.services.synthesis import fetch_cbb_contents_batch
 from app.services.hashing import canonical_hash
 from app.models.artifacts import ReasoningPath, NodeRegistry
 
@@ -130,7 +131,7 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
         }
 
     best_path = top_paths[0]
-    cbb_answer = await synthesize_answer(payload.query, best_path, db, model)
+    cbb_answer = await synthesize_answer(payload.query, best_path, db, model, all_paths=top_paths)
 
     # Save local paths only
     saved_paths = []
