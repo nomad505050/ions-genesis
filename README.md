@@ -97,6 +97,27 @@ Query Interface → Answer + Reasoning Path + Evidence
 
 ---
 
+## Genesis Node
+
+The reference genesis node is publicly accessible. You can query it directly or register your node against it:
+
+```bash
+# Query the genesis node
+curl -X POST http://162.243.203.243:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How does institutional memory compound competitive advantage?"}'
+
+# Register your node with genesis
+curl -X POST http://162.243.203.243:8000/nodes/register \
+  -H "Content-Type: application/json" \
+  -d '{"node_id": "your_node_id", "public_api_base": "https://your-node.example.com"}'
+
+# Node manifest
+curl http://162.243.203.243:8000/.well-known/ions-node.json
+```
+
+---
+
 ## Quick Start
 
 ### Prerequisites
