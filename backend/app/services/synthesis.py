@@ -97,14 +97,15 @@ Primary Reasoning Path (confidence {path['path_confidence']}):
 {chain_text}
 {alt_context}
 
-Provide a thorough answer that:
-1. Directly answers the query with depth and specificity
-2. Explains the reasoning chain — how each CBB builds on the previous
-3. Incorporates insights from supplementary CBBs where they add value
-4. Notes any tensions or contradictions between CBBs
-5. States a confidence caveat if path confidence is below 0.6, explaining what additional knowledge would strengthen the answer
+Provide a structured answer with these sections:
 
-Write in clear, substantive prose. Do not be brief — use the full richness of the reasoning path."""
+**Concise answer:** 2-3 sentences directly answering the query.
+
+**Reasoning chain:** Step through how each CBB connects to build the answer. Reference CBB IDs in brackets. Stop after covering all CBBs in the primary path.
+
+**Confidence caveat:** If path confidence is below 0.6, state what additional knowledge would strengthen the answer in one sentence.
+
+Stop writing after the confidence caveat. Do not add additional commentary."""
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -117,7 +118,7 @@ Write in clear, substantive prose. Do not be brief — use the full richness of 
             json={
                 "model": model or settings.default_model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 1500  # increased from 500
+                "max_tokens": 800
             },
             timeout=60.0  # increased from 30s
         )
