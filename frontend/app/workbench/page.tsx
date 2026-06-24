@@ -3,7 +3,16 @@
 import { useState, useEffect } from "react";
 import { loadSettings, getActiveModel } from "../settings/page";
 
-const IONS_API = "http://localhost:8000";
+function getIonsAPI(): string {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  try {
+    const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
+    return s.ionsApiUrl || "http://localhost:8000";
+  } catch {
+    return "http://localhost:8000";
+  }
+}
+const IONS_API = getIonsAPI();
 
 type CBB = {
   cbb_id: string;

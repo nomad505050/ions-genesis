@@ -3,7 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import { loadSettings, getActiveModel } from "../settings/page";
 
-const IONS_API = "http://localhost:8000";
+function getIonsAPI(): string {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  try {
+    const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
+    return s.ionsApiUrl || "http://localhost:8000";
+  } catch {
+    return "http://localhost:8000";
+  }
+}
+const IONS_API = getIonsAPI();
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "meta-llama/llama-3.1-8b-instruct";
 

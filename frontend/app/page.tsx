@@ -2,7 +2,16 @@
 
 import { useState, useEffect } from "react";
 
-const IONS_API = "http://localhost:8000";
+function getIonsAPI(): string {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  try {
+    const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
+    return s.ionsApiUrl || "http://localhost:8000";
+  } catch {
+    return "http://localhost:8000";
+  }
+}
+const IONS_API = getIonsAPI();
 
 const SAMPLE_QUERIES = [
   "Why do AI pilots succeed but fail to scale to production?",
@@ -59,6 +68,9 @@ export default function ExplorerPage() {
         const cbbEl = document.getElementById("live-cbbs");
         if (cbbEl) cbbEl.textContent = display;
         setLiveCBBs(display);
+        // Update node count
+        const nodeEl = document.getElementById("live-nodes");
+        if (nodeEl) nodeEl.textContent = String(data.active_nodes || 1);
       } catch {
         // Fallback to single page count
         try {
@@ -313,4 +325,3 @@ export default function ExplorerPage() {
     </>
   );
 }
-

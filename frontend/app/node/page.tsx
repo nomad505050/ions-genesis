@@ -2,7 +2,16 @@
 
 import { useState, useEffect } from "react";
 
-const IONS_API = "http://localhost:8000";
+function getIonsAPI(): string {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  try {
+    const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
+    return s.ionsApiUrl || "http://localhost:8000";
+  } catch {
+    return "http://localhost:8000";
+  }
+}
+const IONS_API = getIonsAPI();
 
 type NodeStats = {
   cbbs: number;
