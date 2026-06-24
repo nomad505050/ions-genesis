@@ -121,11 +121,14 @@ async def enumerate_paths(
 def compute_evidence_score(evidence_list: list) -> float:
     if not evidence_list:
         return 0.25
+    # Check if any evidence is from a book or external source
+    source_types = [e.get("source_type", "") if isinstance(e, dict) else "" for e in evidence_list]
+    has_book = any(t in ("book", "paper", "article", "url") for t in source_types)
+    if has_book:
+        return 0.75 if len(evidence_list) == 1 else 0.90
     if len(evidence_list) == 1:
         return 0.50
-    if len(evidence_list) >= 2:
-        return 0.75
-    return 0.50
+    return 0.75
 
 
 async def score_paths_batch(paths: List[Dict], db: AsyncSession) -> List[Dict]:
