@@ -9,11 +9,14 @@ from app.api.nodes import router as nodes_router
 from app.core.database import get_db, engine, Base
 from app.core.config import settings
 from app.models.artifacts import CBB, NodeRegistry
+from app.api.nsi import router as nsi_router
+
+
 
 app = FastAPI(
     title="IONS Genesis API",
     description="Intelligence Operating Network System — CBB traversal node",
-    version="0.1.0"
+    version="0.2.0"
 )
 
 app.add_middleware(
@@ -28,7 +31,7 @@ app.include_router(cbb_router)
 app.include_router(relationship_router)
 app.include_router(query_router)
 app.include_router(nodes_router)
-
+app.include_router(nsi_router)
 
 @app.on_event("startup")
 async def startup():
