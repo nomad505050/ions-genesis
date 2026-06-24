@@ -35,16 +35,12 @@ export default function NodePage() {
         const healthResp = await fetch(`${IONS_API}/health`);
         const latency = Date.now() - start;
 
-        // Count CBBs (likely < 2000 so 4 parallel pages sufficient)
-        const cbbOffsets = [0, 500, 1000, 1500];
-        const cbbPages = await Promise.all(
-          cbbOffsets.map(o => fetch(`${IONS_API}/cbb?status=published&limit=500&offset=${o}`).then(r => r.ok ? r.json() : []))
-        );
+        // Use stats endpoint for accurate count
+        const statsResp = await fetch(`${getIonsAPI()}/stats`);
         let cbbCount = 0;
-        for (const page of cbbPages) {
-          if (!Array.isArray(page) || page.length === 0) break;
-          cbbCount += page.length;
-          if (page.length < 500) break;
+        if (statsResp.ok) {
+          const statsData = await statsResp.json();
+          cbbCount = statsData.published_cbbs || 0;
         }
 
         const relCount = 0; // relationship count deferred — see node manifest
