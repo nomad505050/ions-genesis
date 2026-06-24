@@ -3,17 +3,17 @@
 import { useState, useEffect } from "react";
 import { loadSettings, getActiveModel } from "../settings/page";
 
-const apiURL_DEFAULT = "http://localhost:8000";
+const IONS_API_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return apiURL_DEFAULT;
+  if (typeof window === "undefined") return IONS_API_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || apiURL_DEFAULT;
+    return s.ionsApiUrl || IONS_API_DEFAULT;
   } catch {
-    return apiURL_DEFAULT;
+    return IONS_API_DEFAULT;
   }
 }
-const apiURL = typeof window !== "undefined" ? getIonsAPI() : apiURL_DEFAULT;
+const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
 
 type CBB = {
   cbb_id: string;
@@ -47,6 +47,9 @@ export default function WorkbenchPage() {
   const [published, setPublished] = useState<CBB[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ processed: number; created: number; total: number } | null>(null);
+  const [embedding, setEmbedding] = useState(false);
   const [genProgress, setGenProgress] = useState<{ processed: number; created: number; total: number } | null>(null);
   const [genDone, setGenDone] = useState(false);
   const [tab, setTab] = useState<"queue" | "published" | "relationships">("queue");
@@ -68,8 +71,8 @@ export default function WorkbenchPage() {
     setLoading(true);
     try {
       const [candResp, pubResp] = await Promise.all([
-        fetch(`${apiURL}/cbb?status=candidate&limit=50&order=created_at.desc`),
-        fetch(`${apiURL}/cbb?status=published&limit=50&order=created_at.desc`),
+        fetch(`${IONS_API}/cbb?status=candidate&limit=50&order=created_at.desc`),
+        fetch(`${IONS_API}/cbb?status=published&limit=50&order=created_at.desc`),
       ]);
       const cands = await candResp.json();
       const pubs = await pubResp.json();
@@ -93,7 +96,7 @@ export default function WorkbenchPage() {
     try {
       // Post new published CBB (strip server-assigned fields)
       const { cbb_id, hash, created_at, updated_at, ...rest } = cbb as any;
-      const postResp = await fetch(`${apiURL}/cbb`, {
+      const postResp = await fetch(`${IONS_API}/cbb`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...rest, status: "published" }),
@@ -104,7 +107,7 @@ export default function WorkbenchPage() {
         return;
       }
       // Deprecate the candidate so it won't reappear
-      await fetch(`${apiURL}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
+      await fetch(`${IONS_API}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
       setCandidates(prev => prev.filter(c => c.cbb_id !== cbb.cbb_id));
       setCounts(prev => ({ ...prev, candidate: prev.candidate - 1, published: prev.published + 1 }));
     } catch (e) {
@@ -116,7 +119,7 @@ export default function WorkbenchPage() {
   async function reject(cbb: CBB) {
     setActing(cbb.cbb_id);
     try {
-      await fetch(`${apiURL}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
+      await fetch(`${IONS_API}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
     } catch (e) {
       console.error("Reject error:", e);
     }
@@ -131,7 +134,7 @@ export default function WorkbenchPage() {
     setGenProgress({ processed: 0, created: 0, total: 0 });
 
     try {
-      const startResp = await fetch(`${apiURL}/relationship/generate`, { method: "POST" });
+      const startResp = await fetch(`${IONS_API}/relationship/generate`, { method: "POST" });
       if (!startResp.ok) {
         const err = await startResp.json();
         throw new Error(err.detail || "Generation failed to start");
@@ -140,7 +143,7 @@ export default function WorkbenchPage() {
 
       while (true) {
         await new Promise(r => setTimeout(r, 2000));
-        const pollResp = await fetch(`${apiURL}/relationship/generate/${job_id}`);
+        const pollResp = await fetch(`${IONS_API}/relationship/generate/${job_id}`);
         if (!pollResp.ok) break;
         const job = await pollResp.json();
         setGenProgress({ processed: job.processed || 0, created: job.created || 0, total: job.total || 0 });
@@ -153,6 +156,42 @@ export default function WorkbenchPage() {
       console.error("Generation error:", e);
     }
     setGenerating(false);
+  }
+
+  async function bulkGenerateRelationships() {
+    setBulkGenerating(true);
+    setBulkProgress({ processed: 0, created: 0, total: 0 });
+    try {
+      const startResp = await fetch(`${IONS_API}/relationship/generate?limit=500&min_existing=3`, { method: "POST" });
+      if (!startResp.ok) throw new Error("Failed to start");
+      const { job_id } = await startResp.json();
+      while (true) {
+        await new Promise(r => setTimeout(r, 2000));
+        const pollResp = await fetch(`${IONS_API}/relationship/generate/${job_id}`);
+        if (!pollResp.ok) break;
+        const job = await pollResp.json();
+        setBulkProgress({ processed: job.processed || 0, created: job.created || 0, total: job.total || 0 });
+        if (job.status === "done" || job.status === "error") break;
+      }
+    } catch (e) { console.error(e); }
+    setBulkGenerating(false);
+  }
+
+  async function embedDomains() {
+    setEmbedding(true);
+    try {
+      const startResp = await fetch(`${IONS_API}/nsi/embed`, { method: "POST" });
+      if (!startResp.ok) throw new Error("Failed to start");
+      const { job_id } = await startResp.json();
+      while (true) {
+        await new Promise(r => setTimeout(r, 2000));
+        const pollResp = await fetch(`${IONS_API}/nsi/jobs/${job_id}`);
+        if (!pollResp.ok) break;
+        const job = await pollResp.json();
+        if (job.status === "done" || job.status === "error") break;
+      }
+    } catch (e) { console.error(e); }
+    setEmbedding(false);
   }
 
   return (
@@ -326,6 +365,43 @@ export default function WorkbenchPage() {
                   ✓ Done — {genProgress.created} relationships created across {genProgress.total} CBBs
                 </div>
               )}
+            </div>
+
+            {/* Bulk relationship generation */}
+            <div style={{ padding: "16px 20px", background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "10px", marginTop: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                <div>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "3px" }}>Bulk Generate Relationships</div>
+                  <div style={{ fontSize: "12px", color: "var(--slate2)" }}>Full network pass — all CBBs with fewer than 3 relationships (equivalent to generate_relationships_fast.py)</div>
+                </div>
+                <button className="btn btn-primary" onClick={bulkGenerateRelationships} disabled={bulkGenerating} style={{ flexShrink: 0 }}>
+                  {bulkGenerating ? "Running..." : "⬡ Bulk generate"}
+                </button>
+              </div>
+              {bulkGenerating && bulkProgress && (
+                <div style={{ marginTop: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "var(--slate)", marginBottom: "6px" }}>
+                    <span>Processing {bulkProgress.processed} of {bulkProgress.total} CBBs</span>
+                    <span style={{ color: "var(--emerald)", fontFamily: "var(--font-mono)" }}>{bulkProgress.created} relationships created</span>
+                  </div>
+                  <div className="conf-bar">
+                    <div className="conf-fill" style={{ width: bulkProgress.total > 0 ? `${(bulkProgress.processed / bulkProgress.total) * 100}%` : "0%", background: "var(--emerald)", transition: "width 0.4s ease" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Embed new domains */}
+            <div style={{ padding: "16px 20px", background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "10px", marginTop: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "3px" }}>Embed New Domains</div>
+                  <div style={{ fontSize: "12px", color: "var(--slate2)" }}>Embeds any new domains since last run — required before reclustering on Graph page</div>
+                </div>
+                <button className="btn btn-ghost" onClick={embedDomains} disabled={embedding} style={{ flexShrink: 0 }}>
+                  {embedding ? "Embedding..." : "⬢ Embed domains"}
+                </button>
+              </div>
             </div>
 
             {/* Pending review */}

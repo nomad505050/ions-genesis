@@ -376,6 +376,26 @@ ions-genesis/
 
 ---
 
+## Changelog
+
+### v0.2 — Semantic NSI Clustering
+- **pgvector domain embeddings** — every domain embedded at CBB creation via OpenRouter
+- **Server-side k-means clustering** — NSI groups emerge from semantic similarity, not keyword rules
+- **Graph reads from server** — no client-side LLM grouping, no keyword fallback, instant load
+- **Bulk relationship generation** — full network pass from Workbench (equivalent to script)
+- **Embed domains button** — trigger embedding of new domains before reclustering
+- **Manual recluster trigger** — ↻ Recluster button in Graph page
+
+### v0.1 — Genesis Release
+- Initial open source release
+- CBB registry, typed relationships, reasoning paths
+- Bounded traversal engine with path confidence scoring
+- Multi-node federation with node manifest
+- Light D2Brain document extraction
+- Public genesis node live at 162.243.203.243:8000
+
+---
+
 ## Protocol Status
 
 | Feature | Status |
