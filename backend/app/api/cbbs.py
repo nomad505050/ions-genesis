@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.models.artifacts import CBB
 from app.models.schemas import CBBCreate, CBBResponse
 from app.services.hashing import canonical_hash
+from app.services.embedding import ensure_domain_registered
 
 router = APIRouter(prefix="/cbb", tags=["cbbs"])
 
@@ -25,6 +26,12 @@ async def create_cbb(payload: CBBCreate, db: AsyncSession = Depends(get_db)):
     db.add(cbb)
     await db.commit()
     await db.refresh(cbb)
+    # Auto-embed domain for NSI clustering
+    if payload.domain:
+        try:
+            await ensure_domain_registered(payload.domain, db)
+        except Exception:
+            pass  # never block CBB creation on embedding failure
     return cbb
 
 @router.get("/{cbb_id}", response_model=CBBResponse)
