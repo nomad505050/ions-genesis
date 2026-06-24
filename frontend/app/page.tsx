@@ -2,16 +2,16 @@
 
 import { useState, useEffect } from "react";
 
+const IONS_API_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return "http://localhost:8000";
+  if (typeof window === "undefined") return IONS_API_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || "http://localhost:8000";
+    return s.ionsApiUrl || IONS_API_DEFAULT;
   } catch {
-    return "http://localhost:8000";
+    return IONS_API_DEFAULT;
   }
 }
-const IONS_API = getIonsAPI();
 
 const SAMPLE_QUERIES = [
   "Why do AI pilots succeed but fail to scale to production?",
@@ -60,7 +60,7 @@ export default function ExplorerPage() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const resp = await fetch(`${IONS_API}/stats`);
+        const resp = await fetch(`${getIonsAPI()}/stats`);
         if (!resp.ok) throw new Error("stats failed");
         const data = await resp.json();
         const count = data.published_cbbs ?? 0;
@@ -74,7 +74,7 @@ export default function ExplorerPage() {
       } catch {
         // Fallback to single page count
         try {
-          const resp = await fetch(`${IONS_API}/cbb?status=published&limit=500`);
+          const resp = await fetch(`${getIonsAPI()}/cbb?status=published&limit=500`);
           if (!resp.ok) return;
           const batch = await resp.json();
           const display = Array.isArray(batch) ? batch.length.toLocaleString() : "—";
@@ -95,7 +95,7 @@ export default function ExplorerPage() {
     setError("");
 
     try {
-      const resp = await fetch(`${IONS_API}/query`, {
+      const resp = await fetch(`${getIonsAPI()}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: q, top_n_paths: 3 }),

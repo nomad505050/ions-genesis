@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from "react";
 
+const IONS_API_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return "http://localhost:8000";
+  if (typeof window === "undefined") return IONS_API_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || "http://localhost:8000";
+    return s.ionsApiUrl || IONS_API_DEFAULT;
   } catch {
-    return "http://localhost:8000";
+    return IONS_API_DEFAULT;
   }
 }
-const IONS_API = getIonsAPI();
+const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
 
 type NodeStats = {
   cbbs: number;

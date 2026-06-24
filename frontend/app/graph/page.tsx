@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 
+const IONS_API_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return "http://localhost:8000";
+  if (typeof window === "undefined") return IONS_API_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || "http://localhost:8000";
+    return s.ionsApiUrl || IONS_API_DEFAULT;
   } catch {
-    return "http://localhost:8000";
+    return IONS_API_DEFAULT;
   }
 }
-const IONS_API = getIonsAPI();
+const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 
 type CBB = {
@@ -84,9 +85,7 @@ export default function GraphPage() {
 
     // Clear cache if forced regroup
     if (forceRegroup) {
-      Object.keys(localStorage)
-        .filter(k => k.startsWith("ions_nsi_groupings_"))
-        .forEach(k => localStorage.removeItem(k));
+      localStorage.removeItem("ions_nsi_groupings_v2");
     }
 
     // Fetch all CBBs
@@ -121,8 +120,8 @@ export default function GraphPage() {
     // Use LLM to group domains into NSIs if API key available
     let groupings: Record<string, string> = {};
 
-    // Check cache first — only regroup if domain list changed or forced
-    const cacheKey = `ions_nsi_groupings_${domainNames.sort().join(",").substring(0, 100)}`;
+    // Use stable cache key — only regroup when forced or cache missing
+    const cacheKey = `ions_nsi_groupings_v2`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       try { groupings = JSON.parse(cached); } catch { /* ignore */ }
@@ -169,7 +168,7 @@ Output format:
         if (firstBrace !== -1 && lastBrace !== -1) {
           const parsed = JSON.parse(raw.substring(firstBrace, lastBrace + 1));
           groupings = parsed.groupings || {};
-          // Cache the groupings keyed to current domain list
+          // Cache groupings with stable key
           localStorage.setItem(cacheKey, JSON.stringify(groupings));
         }
       } catch {
@@ -611,3 +610,4 @@ Output format:
     </>
   );
 }
+
