@@ -2,17 +2,17 @@
 
 import { useState, useEffect } from "react";
 
-const IONS_API_DEFAULT = "http://localhost:8000";
+const API_DEFAULT = "http://localhost:8000";
+
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return IONS_API_DEFAULT;
+  if (typeof window === "undefined") return API_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || IONS_API_DEFAULT;
+    return s.ionsApiUrl || API_DEFAULT;
   } catch {
-    return IONS_API_DEFAULT;
+    return API_DEFAULT;
   }
 }
-const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
 
 type NodeStats = {
   cbbs: number;
@@ -22,43 +22,55 @@ type NodeStats = {
 };
 
 export default function NodePage() {
+  const [apiUrl, setApiUrl] = useState(API_DEFAULT);
   const [stats, setStats] = useState<NodeStats>({ cbbs: 0, relationships: 0, paths: 0, healthy: false });
   const [registeredNodes, setRegisteredNodes] = useState<{node_id: string; public_api_base: string; status: string; domains: string[]; cbb_count?: number; description?: string; last_seen?: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [uptime, setUptime] = useState("—");
 
-  useEffect(() => {
-    async function fetchStats() {
-      setLoading(true);
-      try {
-        const start = Date.now();
-        const healthResp = await fetch(`${IONS_API}/health`);
-        const latency = Date.now() - start;
+  async function loadStats(url: string) {
+    setLoading(true);
+    try {
+      const start = Date.now();
+      const healthResp = await fetch(`${url}/health`);
+      const latency = Date.now() - start;
 
-        // Use stats endpoint for accurate count
-        const statsResp = await fetch(`${getIonsAPI()}/stats`);
-        let cbbCount = 0;
-        if (statsResp.ok) {
-          const statsData = await statsResp.json();
-          cbbCount = statsData.published_cbbs || 0;
-        }
-
-        const relCount = 0; // relationship count deferred — see node manifest
-
-        setStats({
-          cbbs: cbbCount,
-          relationships: relCount,
-          paths: 0,
-          healthy: healthResp.ok,
-        });
-        setUptime(`${latency}ms`);
-      } catch {
-        setStats({ cbbs: 0, relationships: 0, paths: 0, healthy: false });
-        setUptime("unreachable");
+      const statsResp = await fetch(`${url}/stats`);
+      let cbbCount = 0;
+      if (statsResp.ok) {
+        const statsData = await statsResp.json();
+        cbbCount = statsData.published_cbbs || 0;
       }
-      setLoading(false);
+
+      setStats({
+        cbbs: cbbCount,
+        relationships: 0,
+        paths: 0,
+        healthy: healthResp.ok,
+      });
+      setUptime(`${latency}ms`);
+    } catch {
+      setStats({ cbbs: 0, relationships: 0, paths: 0, healthy: false });
+      setUptime("unreachable");
     }
-    fetchStats();
+    setLoading(false);
+  }
+
+  async function loadNodes(url: string) {
+    try {
+      const resp = await fetch(`${url}/nodes`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setRegisteredNodes(Array.isArray(data) ? data : []);
+      }
+    } catch { /* silent */ }
+  }
+
+  useEffect(() => {
+    const url = getIonsAPI();
+    setApiUrl(url);
+    loadStats(url);
+    loadNodes(url);
   }, []);
 
   const nodeManifest = {
@@ -76,7 +88,7 @@ export default function NodePage() {
       "traverse",
       "path_registry"
     ],
-    public_api_base: IONS_API,
+    public_api_base: apiUrl,
     status: stats.healthy ? "active" : "unreachable",
   };
 
@@ -106,7 +118,7 @@ export default function NodePage() {
         <span className="topbar-sub">Genesis node · ions-genesis-0.1 · open protocol</span>
         <div className="topbar-actions">
           <a
-            href={`${IONS_API}/docs`}
+            href={`${apiUrl}/docs`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-ghost"
@@ -119,7 +131,7 @@ export default function NodePage() {
       <div className="page-content">
 
         {/* Health banner */}
-        <div className={`node-health`} style={{
+        <div className="node-health" style={{
           background: stats.healthy ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
           borderColor: stats.healthy ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
           color: stats.healthy ? "var(--emerald)" : "var(--red)",
@@ -129,15 +141,14 @@ export default function NodePage() {
             ? "Checking node status..."
             : stats.healthy
             ? `Node healthy · API responding · latency ${uptime} · traversal engine active`
-            : `Node unreachable at ${IONS_API} · start with: docker compose up -d`}
+            : `Node unreachable at ${apiUrl} · start with: docker compose up -d`}
         </div>
 
         {/* Stats */}
         <div className="grid-3">
           {[
             { value: stats.cbbs > 0 ? stats.cbbs.toLocaleString() : "—", label: "Published CBBs", delta: "live from network" },
-            
-            { value: (typeof document !== "undefined" && document.getElementById("live-clusters")?.textContent) || "—", label: "NSI Clusters", delta: "auto-grouped by LLM" },
+            { value: "—", label: "NSI Clusters", delta: "auto-grouped by LLM" },
             { value: "0.547", label: "Avg Path Confidence", delta: "threshold: 0.600" },
           ].map((s) => (
             <div key={s.label} className="stat-card">
@@ -232,16 +243,11 @@ export default function NodePage() {
               borderRadius: "6px",
               overflowX: "auto",
             }}>
-{`git clone https://github.com/ions-protocol/genesis
-cd genesis
-cp .env.example .env
-docker compose up -d
-make migrate && make seed
-# Node running at localhost:8000`}
+              {`git clone https://github.com/nomad505050/ions-genesis\ncd ions-genesis\ncp .env.example .env\ndocker compose up -d\n# Node running at localhost:8000`}
             </pre>
             <div style={{ marginTop: "14px", display: "flex", gap: "8px" }}>
               <a
-                href="https://github.com/ions-protocol/genesis"
+                href="https://github.com/nomad505050/ions-genesis"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-primary btn-sm"
@@ -270,7 +276,7 @@ make migrate && make seed
                 padding: "14px",
                 background: "var(--bg3)",
                 borderRadius: "8px",
-                border: `1px solid var(--border)`,
+                border: "1px solid var(--border)",
               }}>
                 <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: r.color, marginBottom: "6px", letterSpacing: "0.5px" }}>
                   {r.label}
@@ -284,79 +290,79 @@ make migrate && make seed
           </div>
         </div>
 
-      {/* Registered Nodes */}
-      <div>
-        <div className="card-label" style={{ marginBottom: "12px" }}>
-          Registered Nodes ({registeredNodes.length + 1})
-        </div>
-
-        {/* This node */}
-        <div style={{
-          padding: "14px 18px",
-          background: "rgba(99,102,241,0.06)",
-          border: "1px solid var(--indigo)",
-          borderRadius: "8px",
-          marginBottom: "8px",
-          display: "flex",
-          alignItems: "center",
-          gap: "14px",
-        }}>
-          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--emerald)", flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "13px", color: "var(--text2)", fontWeight: 500, marginBottom: "2px" }}>
-              genesis_node <span style={{ fontSize: "10px", color: "var(--indigo2)", fontFamily: "var(--font-mono)", marginLeft: "8px" }}>this node</span>
-            </div>
-            <div style={{ fontSize: "11px", color: "var(--slate2)", fontFamily: "var(--font-mono)" }}>
-              http://localhost:8000 · {stats.cbbs} CBBs
-            </div>
+        {/* Registered Nodes */}
+        <div>
+          <div className="card-label" style={{ marginBottom: "12px" }}>
+            Registered Nodes ({registeredNodes.length + 1})
           </div>
-          <span className="tag tag-emerald">active</span>
-        </div>
 
-        {/* Remote nodes */}
-        {registeredNodes.length === 0 ? (
+          {/* This node */}
           <div style={{
-            padding: "20px 18px",
-            background: "var(--bg2)",
-            border: "1px dashed var(--border)",
+            padding: "14px 18px",
+            background: "rgba(99,102,241,0.06)",
+            border: "1px solid var(--indigo)",
             borderRadius: "8px",
-            textAlign: "center",
+            marginBottom: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
           }}>
-            <div style={{ fontSize: "13px", color: "var(--slate)", marginBottom: "8px" }}>
-              No other nodes registered yet
-            </div>
-            <div style={{ fontSize: "11px", color: "var(--slate2)", lineHeight: 1.6, marginBottom: "12px" }}>
-              When another node runs IONS Genesis and registers with this node, it will appear here and participate in federated traversal.
-            </div>
-            <code style={{ fontSize: "11px", color: "var(--indigo2)", background: "var(--bg3)", padding: "6px 12px", borderRadius: "4px" }}>
-              {'POST /nodes/register { "node_id": "...", "public_api_base": "https://..." }'}
-            </code>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {registeredNodes.map(node => (
-              <div key={node.node_id} style={{
-                padding: "14px 18px",
-                background: "var(--bg2)",
-                border: "1px solid var(--border)",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                gap: "14px",
-              }}>
-                <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: node.status === "active" ? "var(--emerald)" : "var(--red)", flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "13px", color: "var(--text2)", fontWeight: 500, marginBottom: "2px" }}>{node.node_id}</div>
-                  <div style={{ fontSize: "11px", color: "var(--slate2)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {node.public_api_base} · {node.domains?.length || 0} domains
-                  </div>
-                </div>
-                <span className={`tag tag-${node.status === "active" ? "emerald" : "red"}`}>{node.status}</span>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--emerald)", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "13px", color: "var(--text2)", fontWeight: 500, marginBottom: "2px" }}>
+                genesis_node <span style={{ fontSize: "10px", color: "var(--indigo2)", fontFamily: "var(--font-mono)", marginLeft: "8px" }}>this node</span>
               </div>
-            ))}
+              <div style={{ fontSize: "11px", color: "var(--slate2)", fontFamily: "var(--font-mono)" }}>
+                {apiUrl} · {stats.cbbs} CBBs
+              </div>
+            </div>
+            <span className="tag tag-emerald">active</span>
           </div>
-        )}
-      </div>
+
+          {/* Remote nodes */}
+          {registeredNodes.length === 0 ? (
+            <div style={{
+              padding: "20px 18px",
+              background: "var(--bg2)",
+              border: "1px dashed var(--border)",
+              borderRadius: "8px",
+              textAlign: "center",
+            }}>
+              <div style={{ fontSize: "13px", color: "var(--slate)", marginBottom: "8px" }}>
+                No other nodes registered yet
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--slate2)", lineHeight: 1.6, marginBottom: "12px" }}>
+                When another node runs IONS Genesis and registers with this node, it will appear here and participate in federated traversal.
+              </div>
+              <code style={{ fontSize: "11px", color: "var(--indigo2)", background: "var(--bg3)", padding: "6px 12px", borderRadius: "4px" }}>
+                {'POST /nodes/register { "node_id": "...", "public_api_base": "https://..." }'}
+              </code>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {registeredNodes.map(node => (
+                <div key={node.node_id} style={{
+                  padding: "14px 18px",
+                  background: "var(--bg2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: node.status === "active" ? "var(--emerald)" : "var(--red)", flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", color: "var(--text2)", fontWeight: 500, marginBottom: "2px" }}>{node.node_id}</div>
+                    <div style={{ fontSize: "11px", color: "var(--slate2)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {node.public_api_base} · {node.domains?.length || 0} domains
+                    </div>
+                  </div>
+                  <span className={`tag tag-${node.status === "active" ? "emerald" : "red"}`}>{node.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
       </div>
     </>

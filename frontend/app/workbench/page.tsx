@@ -3,17 +3,17 @@
 import { useState, useEffect } from "react";
 import { loadSettings, getActiveModel } from "../settings/page";
 
-const IONS_API_DEFAULT = "http://localhost:8000";
+const apiURL_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return IONS_API_DEFAULT;
+  if (typeof window === "undefined") return apiURL_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || IONS_API_DEFAULT;
+    return s.ionsApiUrl || apiURL_DEFAULT;
   } catch {
-    return IONS_API_DEFAULT;
+    return apiURL_DEFAULT;
   }
 }
-const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
+const apiURL = typeof window !== "undefined" ? getIonsAPI() : apiURL_DEFAULT;
 
 type CBB = {
   cbb_id: string;
@@ -68,8 +68,8 @@ export default function WorkbenchPage() {
     setLoading(true);
     try {
       const [candResp, pubResp] = await Promise.all([
-        fetch(`${IONS_API}/cbb?status=candidate&limit=50&order=created_at.desc`),
-        fetch(`${IONS_API}/cbb?status=published&limit=50&order=created_at.desc`),
+        fetch(`${apiURL}/cbb?status=candidate&limit=50&order=created_at.desc`),
+        fetch(`${apiURL}/cbb?status=published&limit=50&order=created_at.desc`),
       ]);
       const cands = await candResp.json();
       const pubs = await pubResp.json();
@@ -93,7 +93,7 @@ export default function WorkbenchPage() {
     try {
       // Post new published CBB (strip server-assigned fields)
       const { cbb_id, hash, created_at, updated_at, ...rest } = cbb as any;
-      const postResp = await fetch(`${IONS_API}/cbb`, {
+      const postResp = await fetch(`${apiURL}/cbb`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...rest, status: "published" }),
@@ -104,7 +104,7 @@ export default function WorkbenchPage() {
         return;
       }
       // Deprecate the candidate so it won't reappear
-      await fetch(`${IONS_API}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
+      await fetch(`${apiURL}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
       setCandidates(prev => prev.filter(c => c.cbb_id !== cbb.cbb_id));
       setCounts(prev => ({ ...prev, candidate: prev.candidate - 1, published: prev.published + 1 }));
     } catch (e) {
@@ -116,7 +116,7 @@ export default function WorkbenchPage() {
   async function reject(cbb: CBB) {
     setActing(cbb.cbb_id);
     try {
-      await fetch(`${IONS_API}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
+      await fetch(`${apiURL}/cbb/${cbb.cbb_id}/deprecate`, { method: "POST" });
     } catch (e) {
       console.error("Reject error:", e);
     }
@@ -131,7 +131,7 @@ export default function WorkbenchPage() {
     setGenProgress({ processed: 0, created: 0, total: 0 });
 
     try {
-      const startResp = await fetch(`${IONS_API}/relationship/generate`, { method: "POST" });
+      const startResp = await fetch(`${apiURL}/relationship/generate`, { method: "POST" });
       if (!startResp.ok) {
         const err = await startResp.json();
         throw new Error(err.detail || "Generation failed to start");
@@ -140,7 +140,7 @@ export default function WorkbenchPage() {
 
       while (true) {
         await new Promise(r => setTimeout(r, 2000));
-        const pollResp = await fetch(`${IONS_API}/relationship/generate/${job_id}`);
+        const pollResp = await fetch(`${apiURL}/relationship/generate/${job_id}`);
         if (!pollResp.ok) break;
         const job = await pollResp.json();
         setGenProgress({ processed: job.processed || 0, created: job.created || 0, total: job.total || 0 });

@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 
-const IONS_API_DEFAULT = "http://localhost:8000";
+const apiURL_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return IONS_API_DEFAULT;
+  if (typeof window === "undefined") return apiURL_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || IONS_API_DEFAULT;
+    return s.ionsApiUrl || apiURL_DEFAULT;
   } catch {
-    return IONS_API_DEFAULT;
+    return apiURL_DEFAULT;
   }
 }
-const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
+const apiURL = typeof window !== "undefined" ? getIonsAPI() : apiURL_DEFAULT;
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 
 type CBB = {
@@ -93,7 +93,7 @@ export default function GraphPage() {
     let offset = 0;
     try {
       while (true) {
-        const resp = await fetch(`${IONS_API}/cbb?status=published&limit=500&offset=${offset}`);
+        const resp = await fetch(`${apiURL}/cbb?status=published&limit=500&offset=${offset}`);
         if (!resp.ok) break;
         const batch = await resp.json();
         if (!batch || batch.length === 0) break;
@@ -248,7 +248,7 @@ Output format:
     // Fetch a sample of relationships to determine cross-NSI connections
     const connections: Record<string, number> = {};
     try {
-      const relResp = await fetch(`${IONS_API}/relationship?limit=500`);
+      const relResp = await fetch(`${apiURL}/relationship?limit=500`);
       if (relResp.ok) {
         const rels = await relResp.json();
         for (const rel of rels) {

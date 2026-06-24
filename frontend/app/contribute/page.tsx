@@ -3,17 +3,17 @@
 import { useState, useRef, useEffect } from "react";
 import { loadSettings, getActiveModel } from "../settings/page";
 
-const IONS_API_DEFAULT = "http://localhost:8000";
+const apiURL_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return IONS_API_DEFAULT;
+  if (typeof window === "undefined") return apiURL_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || IONS_API_DEFAULT;
+    return s.ionsApiUrl || apiURL_DEFAULT;
   } catch {
-    return IONS_API_DEFAULT;
+    return apiURL_DEFAULT;
   }
 }
-const IONS_API = typeof window !== "undefined" ? getIonsAPI() : IONS_API_DEFAULT;
+const apiURL = typeof window !== "undefined" ? getIonsAPI() : apiURL_DEFAULT;
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "meta-llama/llama-3.1-8b-instruct";
 
@@ -201,7 +201,7 @@ export default function ContributePage() {
 
     for (const c of selected) {
       try {
-        const resp = await fetch(`${IONS_API}/cbb`, {
+        const resp = await fetch(`${apiURL}/cbb`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -259,7 +259,7 @@ export default function ContributePage() {
         } catch { /* use defaults */ }
       }
 
-      const resp = await fetch(`${IONS_API}/cbb`, {
+      const resp = await fetch(`${apiURL}/cbb`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

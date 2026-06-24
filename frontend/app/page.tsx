@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 
-const IONS_API_DEFAULT = "http://localhost:8000";
+const apiURL_DEFAULT = "http://localhost:8000";
 function getIonsAPI(): string {
-  if (typeof window === "undefined") return IONS_API_DEFAULT;
+  if (typeof window === "undefined") return apiURL_DEFAULT;
   try {
     const s = JSON.parse(localStorage.getItem("ions_settings") || "{}");
-    return s.ionsApiUrl || IONS_API_DEFAULT;
+    return s.ionsApiUrl || apiURL_DEFAULT;
   } catch {
-    return IONS_API_DEFAULT;
+    return apiURL_DEFAULT;
   }
 }
 
