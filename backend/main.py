@@ -10,7 +10,7 @@ from app.core.database import get_db, engine, Base
 from app.core.config import settings
 from app.models.artifacts import CBB, NodeRegistry
 from app.api.nsi import router as nsi_router
-
+from app.api.dedup import router as dedup_router
 
 
 app = FastAPI(
@@ -32,6 +32,7 @@ app.include_router(relationship_router)
 app.include_router(query_router)
 app.include_router(nodes_router)
 app.include_router(nsi_router)
+app.include_router(dedup_router)
 
 @app.on_event("startup")
 async def startup():
