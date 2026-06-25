@@ -378,6 +378,16 @@ ions-genesis/
 
 ## Changelog
 
+### v0.3 — Semantic Deduplication
+- **CBB embeddings** — every CBB content embedded at creation via OpenRouter text-embedding-3-small
+- **Auto-reject at ingestion** — similarity > 0.98 in same domain returns existing CBB instead of creating duplicate
+- **Near-duplicate flagging** — similarity 0.92-0.98 queued for Workbench review
+- **Auto-reference** — similarity 0.85-0.92 creates a `references` relationship automatically
+- **Duplicates tab in Workbench** — side-by-side comparison with Keep A / Keep B / Keep Both resolution
+- **Migration endpoint** — `POST /dedup/embed` embeds existing corpus in background
+- **`/cbb/{id}/similar`** — find semantically similar CBBs via API
+- **`/dedup/status`** — embedding coverage and queue status
+
 ### v0.2 — Semantic NSI Clustering
 - **pgvector domain embeddings** — every domain embedded at CBB creation via OpenRouter
 - **Server-side k-means clustering** — NSI groups emerge from semantic similarity, not keyword rules

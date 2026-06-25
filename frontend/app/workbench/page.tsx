@@ -52,9 +52,16 @@ export default function WorkbenchPage() {
   const [embedding, setEmbedding] = useState(false);
   const [genProgress, setGenProgress] = useState<{ processed: number; created: number; total: number } | null>(null);
   const [genDone, setGenDone] = useState(false);
-  const [tab, setTab] = useState<"queue" | "published" | "relationships">("queue");
+  const [tab, setTab] = useState<"queue" | "published" | "relationships" | "duplicates">("queue");
   const [acting, setActing] = useState<string | null>(null);
   const [counts, setCounts] = useState({ candidate: 0, published: 0, rejected: 0 });
+  const [dupQueue, setDupQueue] = useState<{
+    queue_id: string;
+    similarity: number;
+    cbb_a: { cbb_id: string; content: string; domain: string; confidence: number };
+    cbb_b: { cbb_id: string; content: string; domain: string; confidence: number };
+  }[]>([]);
+  const [dupCount, setDupCount] = useState(0);
 
   // Relationship builder state
   const [apiKey, setApiKey] = useState("");
@@ -70,16 +77,20 @@ export default function WorkbenchPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [candResp, pubResp] = await Promise.all([
+      const [candResp, pubResp, dupResp] = await Promise.all([
         fetch(`${IONS_API}/cbb?status=candidate&limit=50&order=created_at.desc`),
         fetch(`${IONS_API}/cbb?status=published&limit=50&order=created_at.desc`),
+        fetch(`${IONS_API}/dedup/queue?status=pending`),
       ]);
       const cands = await candResp.json();
       const pubs = await pubResp.json();
+      const dups = dupResp.ok ? await dupResp.json() : [];
       const sortByDate = (a: CBB, b: CBB) =>
         new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       setCandidates(Array.isArray(cands) ? [...cands].sort(sortByDate) : []);
       setPublished(Array.isArray(pubs) ? [...pubs].sort(sortByDate) : []);
+      setDupQueue(Array.isArray(dups) ? dups : []);
+      setDupCount(Array.isArray(dups) ? dups.length : 0);
       setCounts({
         candidate: Array.isArray(cands) ? cands.length : 0,
         published: Array.isArray(pubs) ? pubs.length : 0,
@@ -194,6 +205,16 @@ export default function WorkbenchPage() {
     setEmbedding(false);
   }
 
+  async function resolveDuplicate(queue_id: string, resolution: string) {
+    try {
+      await fetch(`${IONS_API}/dedup/queue/${queue_id}/resolve?resolution=${resolution}`, { method: "POST" });
+      setDupQueue(prev => prev.filter(d => d.queue_id !== queue_id));
+      setDupCount(prev => prev - 1);
+    } catch (e) {
+      console.error("Resolve error:", e);
+    }
+  }
+
   return (
     <>
       <div className="topbar">
@@ -219,6 +240,7 @@ export default function WorkbenchPage() {
             { key: "queue", label: `Review Queue (${counts.candidate})` },
             { key: "published", label: "Published" },
             { key: "relationships", label: "Activity" },
+            { key: "duplicates", label: `Duplicates (${dupCount})` },
           ] as const).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               padding: "8px 16px", background: "transparent", border: "none",
@@ -471,6 +493,113 @@ export default function WorkbenchPage() {
 
           </div>
         )}
+
+        {/* DUPLICATES TAB */}
+        {tab === "duplicates" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {dupQueue.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">✓</div>
+                <div className="empty-text">No duplicates pending review</div>
+                <div className="empty-sub">
+                  {`Duplicate detection runs automatically when new CBBs are created. Run `}
+                  <strong>Embed CBBs</strong>
+                  {` from Activity tab to scan the existing corpus.`}
+                </div>
+              </div>
+            ) : (
+              dupQueue.map(dup => (
+                <div key={dup.queue_id} style={{
+                  background: "var(--bg2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "10px",
+                  overflow: "hidden",
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    padding: "12px 18px",
+                    background: "var(--bg3)",
+                    borderBottom: "1px solid var(--border)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "12px", color: "var(--slate)" }}>Similarity</span>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        color: dup.similarity >= 0.98 ? "var(--red)" : "var(--amber)",
+                      }}>
+                        {(dup.similarity * 100).toFixed(1)}%
+                      </span>
+                      <span className="tag tag-amber">near-duplicate</span>
+                      <span style={{ fontSize: "11px", color: "var(--slate2)" }}>
+                        domain: {dup.cbb_a.domain}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => resolveDuplicate(dup.queue_id, "keep_a")}
+                        title="Keep A, deprecate B"
+                      >
+                        Keep A
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => resolveDuplicate(dup.queue_id, "keep_b")}
+                        title="Keep B, deprecate A"
+                      >
+                        Keep B
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => resolveDuplicate(dup.queue_id, "keep_both")}
+                        title="Keep both CBBs"
+                      >
+                        Keep Both
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Side by side */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0" }}>
+                    {/* CBB A */}
+                    <div style={{ padding: "16px 18px", borderRight: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: "10px", color: "var(--indigo2)", fontFamily: "var(--font-mono)", marginBottom: "8px" }}>
+                        CBB A · {dup.cbb_a.cbb_id}
+                      </div>
+                      <div style={{ fontSize: "13px", color: "var(--text2)", lineHeight: 1.7, marginBottom: "10px" }}>
+                        {dup.cbb_a.content}
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <span className="tag tag-indigo">{dup.cbb_a.domain?.replace(/_/g, " ").substring(0, 20)}</span>
+                        <span className="tag tag-slate">conf: {dup.cbb_a.confidence?.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {/* CBB B */}
+                    <div style={{ padding: "16px 18px" }}>
+                      <div style={{ fontSize: "10px", color: "var(--emerald)", fontFamily: "var(--font-mono)", marginBottom: "8px" }}>
+                        CBB B · {dup.cbb_b.cbb_id}
+                      </div>
+                      <div style={{ fontSize: "13px", color: "var(--text2)", lineHeight: 1.7, marginBottom: "10px" }}>
+                        {dup.cbb_b.content}
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <span className="tag tag-emerald">{dup.cbb_b.domain?.replace(/_/g, " ").substring(0, 20)}</span>
+                        <span className="tag tag-slate">conf: {dup.cbb_b.confidence?.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
       </div>
     </>
   );
