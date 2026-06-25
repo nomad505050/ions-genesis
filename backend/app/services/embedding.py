@@ -77,7 +77,7 @@ async def ensure_domain_registered(domain_name: str, db: AsyncSession):
         await db.execute(
             text("""
                 INSERT INTO domain_registry (domain_name, embedding, cbb_count)
-                VALUES (:d, :e::vector, 1)
+                VALUES (:d, CAST(:e AS vector), 1)
                 ON CONFLICT (domain_name) DO UPDATE
                 SET cbb_count = domain_registry.cbb_count + 1,
                     last_updated = now()
