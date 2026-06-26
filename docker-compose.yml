@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: ions_postgres
     environment:
       POSTGRES_USER: ions
@@ -18,7 +18,7 @@ services:
 
   api:
     build: ./backend
-    container_name: ions_api
+    container_name: apiURL
     env_file: .env
     ports:
       - "8000:8000"

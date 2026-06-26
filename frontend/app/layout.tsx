@@ -67,7 +67,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="stat-row">
                 <span className="stat-label">Nodes</span>
                 <span className="stat-value">
-                  <span id="live-nodes">1</span>
+                  <span id="live-nodes">-</span>
                 </span>
               </div>
             </div>

@@ -8,7 +8,7 @@ import os
 import random
 import requests
 
-IONS_API_URL       = "http://localhost:8000"
+apiURL_URL       = "http://162.243.203.243:8000"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MODEL              = "meta-llama/llama-3.1-8b-instruct"
 BATCH_SIZE         = 5   # source CBBs per LLM call
@@ -49,7 +49,7 @@ def fetch_all_published():
     offset = 0
     while True:
         resp = requests.get(
-            f"{IONS_API_URL}/cbb",
+            f"{apiURL_URL}/cbb",
             params={"status": "published", "limit": 500, "offset": offset}
         )
         batch = resp.json()
@@ -119,7 +119,7 @@ def post_relationship(source_id, target_id, rel_type, confidence, rationale):
         "rationale":       rationale,
         "status":          "published",
     }
-    resp = requests.post(f"{IONS_API_URL}/relationship", json=payload)
+    resp = requests.post(f"{apiURL_URL}/relationship", json=payload)
     return resp.status_code in (200, 201)
 
 

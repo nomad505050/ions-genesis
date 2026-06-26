@@ -135,7 +135,7 @@ export default function GraphPage() {
 
       const connections: Record<string, number> = {};
       try {
-        const relResp = await fetch(`${url}/relationship?limit=500`);
+        const relResp = await fetch(`${url}/relationship?limit=5000`);
         if (relResp.ok) {
           const rels = await relResp.json();
           for (const rel of rels) {
@@ -320,14 +320,14 @@ export default function GraphPage() {
                     })}
                   </svg>
 
-                  {filteredNSIs.map(nsi => {
+                  {filteredNSIs.map((nsi, i) => {
                     const pos = positions[nsi.name];
                     if (!pos) return null;
                     const size = Math.max(60, Math.min(140, (nsi.totalCount / maxCount) * 140));
                     const isHovered = hoveredNSI === nsi.name;
                     return (
                       <div
-                        key={nsi.name}
+                        key={`${nsi.name}-${i}`}
                         onClick={() => { setSelectedNSI(nsi); setView("subdomains"); setSearch(""); }}
                         onMouseEnter={() => setHoveredNSI(nsi.name)}
                         onMouseLeave={() => setHoveredNSI(null)}
@@ -399,9 +399,9 @@ export default function GraphPage() {
                 <span style={{ color: "var(--slate2)", fontSize: "11px" }}>click to expand ▾</span>
               </summary>
               <div style={{ padding: "0 16px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "8px" }}>
-                {filteredNSIs.map(nsi => (
-                  <div
-                    key={nsi.name}
+              {filteredNSIs.map((nsi, i) => (
+                <div
+                key={`nsi-list-${i}`}
                     onClick={() => { setSelectedNSI(nsi); setView("subdomains"); setSearch(""); }}
                     style={{ padding: "10px 14px", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: "8px", cursor: "pointer", transition: "all 0.15s", display: "flex", alignItems: "center", gap: "10px" }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = nsi.color; (e.currentTarget as HTMLElement).style.background = nsi.color + "0a"; }}
