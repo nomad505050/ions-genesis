@@ -140,24 +140,29 @@ async def score_paths_batch(paths: List[Dict], db: AsyncSession) -> List[Dict]:
         all_cbb_ids.update(path["cbbs"])
         all_rel_ids.update(path["rels"])
 
-    # Batch load CBBs
+    # Batch load CBBs in chunks of 1000
     cbb_map: Dict[str, CBB] = {}
     if all_cbb_ids:
-        result = await db.execute(
-            select(CBB).where(CBB.cbb_id.in_(list(all_cbb_ids)))
-        )
-        for cbb in result.scalars().all():
-            cbb_map[cbb.cbb_id] = cbb
+        cbb_id_list = list(all_cbb_ids)
+        for i in range(0, len(cbb_id_list), 1000):
+            chunk = cbb_id_list[i:i+1000]
+            result = await db.execute(
+                select(CBB).where(CBB.cbb_id.in_(chunk))
+            )
+            for cbb in result.scalars().all():
+                cbb_map[cbb.cbb_id] = cbb
 
-    # Batch load relationships
+    # Batch load relationships in chunks of 1000
     rel_map: Dict[str, Relationship] = {}
     if all_rel_ids:
-        result = await db.execute(
-            select(Relationship).where(Relationship.relationship_id.in_(list(all_rel_ids)))
-        )
-        for rel in result.scalars().all():
-            rel_map[rel.relationship_id] = rel
-
+        rel_id_list = list(all_rel_ids)
+        for i in range(0, len(rel_id_list), 1000):
+            chunk = rel_id_list[i:i+1000]
+            result = await db.execute(
+                select(Relationship).where(Relationship.relationship_id.in_(chunk))
+            )
+            for rel in result.scalars().all():
+                rel_map[rel.relationship_id] = rel
     # Score each path using the loaded data
     scored = []
     for path in paths:
