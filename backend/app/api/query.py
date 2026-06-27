@@ -336,10 +336,11 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                             cbb_ids = p.get("cbbs", [])
                             cbb_contents_list = []
                             if cbb_ids:
-                                result = await bg_db.execute(text("""
+                                placeholders = ",".join(f"'{cid}'" for cid in cbb_ids)
+                                result = await bg_db.execute(text(f"""
                                     SELECT cbb_id, content FROM cbb
-                                    WHERE cbb_id = ANY(:ids::text[])
-                                """), {"ids": cbb_ids})
+                                    WHERE cbb_id IN ({placeholders})
+                                """))
                                 contents = {row[0]: row[1] for row in result.fetchall()}
                                 cbb_contents_list = [contents.get(cid, "") for cid in cbb_ids]
                             await run_validation(
