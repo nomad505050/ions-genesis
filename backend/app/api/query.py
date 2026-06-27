@@ -310,18 +310,47 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
             for cbb_id in path.get("cbbs", path.get("cbb_sequence", []))
             if path.get("source_node", settings.node_id) == settings.node_id
         })
-        # TODO: re-enable saturation tracking after fixing async session sharing
-        # if all_used_cbbs:
-        #     asyncio.create_task(_update_saturation())
-        pass
+        if all_used_cbbs:
+            cbbs_copy = list(all_used_cbbs)
+            async def _update_saturation(cbbs=cbbs_copy):
+                from app.core.database import AsyncSessionLocal
+                try:
+                    async with AsyncSessionLocal() as bg_db:
+                        await update_cbb_appearance_counts(cbbs, bg_db)
+                except Exception as e:
+                    print(f"Saturation update error: {e}")
+            asyncio.create_task(_update_saturation())
 
-        # Trigger async validation for sampled paths
-        # TODO: re-enable after fixing async session sharing
-        # if saved_paths and best_path:
-        #     ...
-        # TODO: re-enable validation after fixing async session sharing
-        # asyncio.create_task(_run_validation())
-        pass
+        if saved_paths and best_path:
+            path_conf = best_path.get("path_confidence", 0)
+            if 0.55 <= path_conf <= 0.65:  # validate uncertain paths
+                path_copy = {**best_path, "path_id": saved_paths[0]}
+                query_copy = payload.query
+                answer_copy = cbb_answer or ""
+                model_copy = model
+                async def _run_validation_bg(p=path_copy, q=query_copy, a=answer_copy, m=model_copy):
+                    from app.core.database import AsyncSessionLocal
+                    from app.services.synthesis import fetch_cbb_contents_batch
+                    try:
+                        async with AsyncSessionLocal() as bg_db:
+                            cbb_ids = p.get("cbbs", [])
+                            cbb_contents_list = []
+                            if cbb_ids:
+                                result = await bg_db.execute(text("""
+                                    SELECT cbb_id, content FROM cbb
+                                    WHERE cbb_id = ANY(:ids::text[])
+                                """), {"ids": cbb_ids})
+                                contents = {row[0]: row[1] for row in result.fetchall()}
+                                cbb_contents_list = [contents.get(cid, "") for cid in cbb_ids]
+                            await run_validation(
+                                path=p, query=q, answer=a,
+                                cbb_contents=cbb_contents_list,
+                                model=m, db=bg_db,
+                                sample_reason="uncertain_confidence",
+                            )
+                    except Exception as e:
+                        print(f"Validation error: {e}")
+                asyncio.create_task(_run_validation_bg())    
         
     # Save routing session
     await _save_routing_session(
