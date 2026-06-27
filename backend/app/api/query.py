@@ -228,20 +228,37 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
     top_paths = all_scored[:payload.top_n_paths]
 
     if not top_paths:
-        await _save_routing_session(
-            db, session_id, payload.query, payload.intent,
-            starts, [], remote_paths, None
-        )
-        return {
-            "query": payload.query,
-            "model": model,
-            "raw_answer": raw_answer,
-            "cbb_answer": None,
-            "paths": [],
-            "nodes_queried": 1,
-            "session_id": session_id,
-            "message": "No traversal paths found. Add more CBBs and relationships."
-        }
+        try:
+            from app.core.database import AsyncSessionLocal
+            import json as _json
+            async with AsyncSessionLocal() as rs_db:
+                await rs_db.execute(text("""
+                    INSERT INTO routing_session (
+                        session_id, query, intent,
+                        nodes_considered, domains_considered, subdomains_considered,
+                        cbbs_discovered, routing_confidence, cache_hit,
+                        conflicts_detected, created_at
+                    ) VALUES (
+                        :sid, :q, :intent,
+                        :nodes, :domains, :subdomains,
+                        :cbbs, :rconf, :cache,
+                        :conflicts, now()
+                    )
+                """), {
+                    "sid": session_id,
+                    "q": payload.query,
+                    "intent": payload.intent,
+                    "nodes": "[]",
+                    "domains": "[]",
+                    "subdomains": "[]",
+                    "cbbs": _json.dumps([c.cbb_id for c in starts]),
+                    "rconf": None,
+                    "cache": False,
+                    "conflicts": 0,
+                })
+                await rs_db.commit()
+        except Exception as e:
+            print(f"ROUTING SESSION ERROR (no paths): {e}")
 
     best_path = top_paths[0]
     # Normalize path keys — beam search uses "cbbs", remote paths use "cbb_sequence"
@@ -353,13 +370,42 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                     except Exception as e:
                         print(f"Validation error: {e}")
                 asyncio.create_task(_run_validation_bg())    
-        
-    # Save routing session
-    await _save_routing_session(
-        db, session_id, payload.query, payload.intent,
-        starts, top_paths, remote_paths,
-        routing_confidence, cache_hit=False,
-    )
+ 
+    # Save routing session with fresh session to avoid transaction state issues
+    try:
+        from app.core.database import AsyncSessionLocal
+        import json as _json
+        async with AsyncSessionLocal() as rs_db:
+            await rs_db.execute(text("""
+                INSERT INTO routing_session (
+                    session_id, query, intent,
+                    nodes_considered, domains_considered, subdomains_considered,
+                    cbbs_discovered, selected_path_id,
+                    routing_confidence, cache_hit,
+                    conflicts_detected, created_at
+                ) VALUES (
+                    :sid, :q, :intent,
+                    :nodes, :domains, :subdomains,
+                    :cbbs, :path_id,
+                    :rconf, :cache,
+                    :conflicts, now()
+                )
+            """), {
+                "sid": session_id,
+                "q": payload.query,
+                "intent": payload.intent,
+                "nodes": "[]",
+                "domains": "[]",
+                "subdomains": "[]",
+                "cbbs": _json.dumps([c.cbb_id for c in starts]),
+                "path_id": top_paths[0].get("path_id") if top_paths else None,
+                "rconf": routing_confidence,
+                "cache": False,
+                "conflicts": 0,
+            })
+            await rs_db.commit()
+    except Exception as e:
+        print(f"ROUTING SESSION ERROR: {e}")
 
     nodes_queried = 1 + len(
         set(p.get("source_node") for p in remote_paths if p.get("source_node"))
