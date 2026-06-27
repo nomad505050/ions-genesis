@@ -2,6 +2,8 @@
 
 A practical guide to running a node, contributing knowledge, and querying the network.
 
+*Protocol version: ions-v0.4*
+
 ---
 
 ## Table of Contents
@@ -10,12 +12,13 @@ A practical guide to running a node, contributing knowledge, and querying the ne
 2. [Explorer — Querying the Network](#explorer)
 3. [Add CBB — Contributing Knowledge](#add-cbb)
 4. [Workbench — Review and Approval](#workbench)
-5. [Graph — Visualizing the Network](#graph)
+5. [Graph — Cognitive Knowledge Map](#graph)
 6. [Node — Status and Federation](#node)
 7. [Settings — API Key and Model](#settings)
 8. [Generating Relationships](#generating-relationships)
 9. [Joining the Network](#joining-the-network)
-10. [Troubleshooting](#troubleshooting)
+10. [API Reference](#api-reference)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -25,7 +28,7 @@ A practical guide to running a node, contributing knowledge, and querying the ne
 
 - Docker and Docker Compose
 - An [OpenRouter](https://openrouter.ai) API key — free tier available
-- Node.js 18+ (for frontend development only)
+- Node.js 18+ (for frontend only)
 
 ### 1. Clone and configure
 
@@ -35,11 +38,11 @@ cd ions-genesis
 cp .env.example .env
 ```
 
-Edit `.env` and add your OpenRouter API key:
+Edit `.env`:
 
 ```bash
 OPENROUTER_API_KEY=sk-or-your-key-here
-PUBLIC_API_BASE=http://localhost:8000
+PUBLIC_API_BASE=https://your-public-url.com
 NODE_DESCRIPTION=My IONS node
 ```
 
@@ -49,7 +52,7 @@ NODE_DESCRIPTION=My IONS node
 docker compose up -d
 ```
 
-This starts three services:
+Three services start:
 - **PostgreSQL** on port 5432 — system of record
 - **FastAPI backend** on port 8000 — CBB registry, traversal, API
 - **Next.js frontend** on port 3000 — web interface
@@ -59,173 +62,169 @@ This starts three services:
 ```bash
 curl http://localhost:8000/health
 # {"status":"ok","node":"genesis_node"}
-
-curl http://localhost:8000/.well-known/ions-node.json
-# Returns your node manifest with capabilities and domains
 ```
 
-Open `http://localhost:3000` to access the web interface.
+Open `http://localhost:3000`.
 
 ---
 
 ## Explorer
 
-The Explorer is the main interface for querying the network. It runs your question through both a raw LLM call and the CBB traversal engine, then shows you the difference.
+The Explorer queries the network and shows you the full reasoning chain behind every answer.
 
 ### Running a query
 
 1. Open `http://localhost:3000`
-2. Type your question in the search box
-3. Press Enter or click the query button
-4. Wait 15-30 seconds for traversal to complete
+2. Type your question or pick a sample query
+3. Press Enter or click **Query**
+4. Wait 10-20 seconds for traversal
 
 ### Reading the result
 
-The result shows:
+**CBB Traversal answer** — synthesized from the reasoning path, grounded in actual CBBs with evidence.
 
-**CBB Traversal answer** — synthesized from the reasoning path. This answer is grounded in the CBBs that were traversed, with explicit evidence references.
+**Path confidence** — trustworthiness of the knowledge in the path (CBB × REL × Evidence).
 
-**Raw LLM answer** — what the model says without CBB context. Useful for comparison.
+**Routing confidence** — did the attention allocation start in the right neighborhood? Below 0.60 means the network has limited coverage of your query domain.
 
-**Confidence** — path confidence score (0-100%). This reflects:
-- Average CBB confidence in the path
-- Average relationship confidence
-- Evidence score of the CBBs used
+**Reasoning path** — the sequence of CBBs and relationships traversed. Each hop shows the CBB ID and relationship type connecting it to the next.
 
-A confidence below 60% means the network has limited coverage of your query domain — contribute more CBBs in that area.
+**Alternative paths** — other high-scoring paths found during traversal. Different angles on the same question.
 
-**Reasoning Path** — the sequence of CBBs and relationships traversed to produce the answer. Click to expand and see each step.
+**Feedback** — thumbs up/down on the answer. Your feedback adjusts path utility and helps the routing layer improve over time.
 
-**Alternative paths** — other high-scoring paths the engine found. Useful for seeing different angles on your question.
+**Session ID** — unique identifier for this query's routing session. Used for debugging and audit.
 
-### Sample queries to try
+### Understanding confidence scores
+
+| Score | Meaning |
+|---|---|
+| > 70% | High confidence — well-covered domain, strong evidence |
+| 55-70% | Moderate — reasonable coverage, some evidence gaps |
+| < 55% | Low — sparse coverage, add more CBBs in this domain |
+
+Routing confidence below 0.60 means the attention allocation may have started in a suboptimal domain. The network will self-correct as routing sessions accumulate.
+
+### Sample queries
 
 - "How does institutional memory compound competitive advantage?"
-- "What are the compliance requirements for high-risk AI systems?"
-- "Why do AI transformation initiatives fail early?"
-- "How does Bitcoin's proof-of-work mechanism create scarcity?"
+- "Why do AI transformation initiatives fail to scale?"
 - "What is the relationship between flow states and peak performance?"
+- "How does Bitcoin proof-of-work create digital scarcity?"
+- "What makes knowledge reusable across an organization?"
 
 ---
 
 ## Add CBB
 
-Contributing knowledge to the network. Every CBB goes through a review queue before publication.
+Every CBB goes through a review queue before publication. The network learns from quality, not quantity.
 
-### Extract from a document (recommended)
-
-The fastest way to contribute is to upload a document and let the network extract CBBs automatically.
+### Extract from a document
 
 1. Go to **Add CBB** in the sidebar
-2. The **Extract from document** tab is selected by default
-3. Either:
-   - Click **↑ Upload file** and select a `.txt`, `.md`, or `.docx` file
-   - Paste text directly into the text area
-4. Fill in **Source type** (book, paper, article, etc.) and **Source reference** (title or URL)
-5. Click **Extract CBBs →**
-6. Review the extracted candidates — each shows the claim, assigned domain, and confidence score
-7. Deselect any claims that are too vague, compound, or unsupported
-8. Click **Submit X CBBs to review queue**
+2. Upload a `.txt`, `.md`, or `.docx` file — or paste text directly
+3. Fill in **Source type** and **Source reference**
+4. Click **Extract CBBs →**
+5. Review extracted candidates — each shows the claim, domain, and confidence
+6. Deselect vague or compound claims
+7. Click **Submit to review queue**
 
-The system processes up to 24,000 characters across 6 chunks. For large documents, paste the most relevant sections.
+The system processes up to 24,000 characters per submission.
 
 ### What makes a good CBB?
 
 **Good CBBs are:**
 - One atomic, assertable claim
-- Specific enough to evaluate as true or false in context
+- Specific enough to evaluate in context
 - Supported by the source material
-- Useful for reasoning about a topic
 
-**Examples of good CBBs:**
+**Good examples:**
 > "Organizations that automate without operational discovery build on incorrect assumptions."
 
-> "The EU AI Act applies to any company deploying AI within the EU, even if they are based elsewhere."
-
-> "Flow states require a challenge-to-skill ratio of approximately 1:1 to sustain."
+> "The EU AI Act applies to any company deploying AI within the EU, regardless of where they are based."
 
 **Avoid:**
-- Vague summaries: *"AI is important for organizations"*
-- Compound claims: *"AI fails because of bad data and poor leadership and unclear goals"*
-- Opinions without evidence: *"This is the best approach"*
+- Vague summaries: *"AI is important"*
+- Compound claims: *"AI fails because of bad data and poor leadership"*
+- Opinions without evidence
 
 ### Add a single claim
 
-Use the **Add single claim** tab for precise manual entry when you have one specific claim to add.
-
-1. Type the claim in the text area
-2. Add source type and reference
-3. Click **Submit to Review Queue**
-
-Domain and confidence are auto-assigned by the LLM if you have an API key configured in Settings.
+Use **Add single claim** tab for precise manual entry. Domain and confidence are auto-assigned if you have an API key configured.
 
 ---
 
 ## Workbench
 
-The Workbench is where submitted CBBs are reviewed and approved before entering the network.
+The Workbench is where CBBs are reviewed, relationships are generated, and duplicates are managed.
 
 ### Review Queue
 
-All submitted CBBs land in the review queue as candidates. Each shows:
-- The claim content
-- Auto-assigned domain
-- Confidence score
-- Source type and timing
+All submitted CBBs land here as candidates.
 
-**Approve** — posts the CBB as published to the network and deprecates the candidate. The CBB immediately becomes available for traversal.
+**Approve** — publishes the CBB to the network. It immediately becomes available for traversal.
 
 **Reject** — deprecates the candidate. It will not appear in traversal.
 
-Review carefully before approving:
+Review carefully:
 - Is the claim atomic? (one assertion only)
-- Is it specific enough to be evaluated?
+- Is it specific enough to evaluate?
 - Does the domain assignment make sense?
-- Is the confidence appropriate for the evidence?
-
-### Published Tab
-
-Shows recently published CBBs sorted by newest first. Useful for seeing what's live in the network.
+- Is the confidence appropriate?
 
 ### Activity Tab
 
-Shows the network pipeline status:
-- **In review queue** — submitted, awaiting approval
-- **Published** — live on the network
+Shows network pipeline status and action buttons:
 
-The **Generate Relationships** button connects recently published CBBs to existing network knowledge. Run this after approving a batch of CBBs to integrate them into the traversal graph.
+**Generate Relationships** — connects recent CBBs to existing network knowledge. Run after approving a batch of CBBs. Each run adds ~100-200 new relationships.
+
+**Bulk Generate** — processes 500 CBBs with fewer than 3 relationships. Run multiple times to build network density.
+
+**Embed Domains** — computes semantic embeddings for all domain names. Required before reclustering.
+
+### Duplicates Tab
+
+Shows near-duplicate CBB pairs detected by semantic similarity (above 0.92 cosine similarity within the same domain).
+
+For each pair, review side-by-side and choose:
+- **Keep A** — deprecate B
+- **Keep B** — deprecate A
+- **Keep Both** — both are genuinely different, keep both
+
+Pairs with similarity > 0.98 are auto-resolved (exact duplicates). Pairs between 0.92-0.98 require human review.
 
 ---
 
 ## Graph
 
-The Graph visualizes the network as NSI (Narrow Super Intelligence) clusters connected by relationship lines.
+The Graph visualizes the network as Cognitive Subdomains (NSI clusters) connected by relationship lines.
 
-### NSI Clusters
+### Cognitive Domains and Subdomains
 
-NSI clusters are semantic groupings of CBB domains, computed automatically by the LLM. For example:
-- **Economics & Finance** — contains `monetary_economics`, `macroeconomics`, `fintech`, `behavioral_economics`
-- **AI Regulation & Policy** — contains `ai_regulation`, `gdpr_compliance`, `ai_transparency`
-- **Peak Performance** — contains `peak_performance`, `flow`, `human_performance_and_resilience`
+The network is organized into 7 Cognitive Domains, each containing multiple Cognitive Subdomains:
 
-Bubble size reflects CBB count. Larger bubbles have more knowledge in that cluster.
+- **Business & Operations** — Organizational Development, Business Strategy, Process Optimization, etc.
+- **Intelligence & Technology** — Artificial Intelligence, Digital Transformation, Complex Systems, etc.
+- **Human Performance** — Human Behavior, Learning and Development, Healthcare Systems, etc.
+- **Economics & Finance** — Economic History, Secrets and Signals
+- **Society & Governance** — Governance and Regulation, Climate Change, Influence Tactics
+- **Knowledge & Epistemology** — Decision Making, Philosophy of Reality
+- **Emerging Frontiers** — Technology Futures
+
+Bubble size reflects CBB count. Larger bubbles have more knowledge.
 
 ### Connection lines
 
-Lines between clusters indicate actual relationships between CBBs in different domains. Thicker, brighter lines mean more cross-domain relationships. This shows you where the network has rich cross-domain reasoning capability.
+Lines between clusters indicate actual relationships between CBBs in different domains. Thicker lines mean more cross-domain relationships. Colors show which cluster you are hovering — all lines to/from that cluster light up in its color.
 
 ### Navigating
 
-1. **Hover** over a cluster to see its name, CBB count, and sub-domain count
-2. **Click** a cluster to drill into its sub-domains
-3. **Click** a sub-domain to see individual CBBs
-4. **Click** a CBB to see its full content and confidence
-5. Use the **Filter** box to find specific clusters or CBBs by keyword
-6. Click **↻ Regroup** to re-run LLM grouping after adding new domains
-
-### Understanding the layout
-
-The largest cluster is positioned in the center. Other clusters orbit it, sized by CBB count. Clusters with many cross-domain relationships will have many visible connection lines.
+1. **Hover** a cluster to see its name and CBB count
+2. **Click** a cluster to drill into its subdomains
+3. **Click** a subdomain to see individual CBBs
+4. **Click** a CBB to see full content and confidence
+5. Use the **Filter** box to search by keyword
+6. Click **↻ Recluster** to re-run k-means grouping after adding new domains
 
 ---
 
@@ -236,131 +235,177 @@ The Node page shows your node's status, statistics, and federation state.
 ### Node stats
 
 - **Published CBBs** — total CBBs live on the network
-- **NSI Clusters** — number of knowledge clusters (updates when you visit the Graph page)
-- **Avg Path Confidence** — average confidence across saved reasoning paths
-
-### API Endpoints
-
-Shows which protocol endpoints are live on your node. All endpoints marked **live** are accessible at `http://localhost:8000`.
-
-The interactive API docs are at `http://localhost:8000/docs`.
+- **Published Relationships** — total typed relationships
+- **Cognitive Subdomains** — knowledge clusters
+- **Active Nodes** — registered federated nodes
 
 ### Node Manifest
 
-Your node announces its capabilities at:
+Your node announces its Cognitive Domains and capabilities at:
 ```
 GET /.well-known/ions-node.json
 ```
 
-This includes your node ID, supported domains, CBB count, and capabilities. Other nodes use this to discover what knowledge your node holds.
+v0.4 manifests include Cognitive Domain coverage with declared strength scores, replacing raw domain lists. This enables smarter federation routing — connected nodes can assess your node's relevance to a query before sending it.
 
 ### Registered Nodes
 
-Shows other IONS nodes that have registered with your node. When nodes are registered, queries automatically traverse all connected nodes and merge the results.
+Shows IONS nodes registered with your node. When nodes are registered, queries automatically traverse all connected nodes and merge ranked results. Node failures are handled gracefully — a single unreachable node never blocks a query.
+
+### Routing Health
+
+View routing session metrics at:
+```
+GET /routing/health
+```
+
+Shows average routing confidence, cache hit ratio, and domain routing weights. Routing confidence trending up means the network is learning to allocate attention more effectively.
 
 ---
 
 ## Settings
 
-Configure your API key, model, and node URL.
-
 ### OpenRouter API Key
 
 Required for:
-- CBB extraction from documents (Contribute page)
-- Server-side relationship generation (Workbench)
-- NSI cluster grouping (Graph page)
+- CBB extraction from documents
+- Relationship generation
+- Query synthesis
 
-Get a free key at [openrouter.ai](https://openrouter.ai). Set it in `.env` as `OPENROUTER_API_KEY` for server-side use, or in Settings for client-side extraction.
+Get a free key at [openrouter.ai](https://openrouter.ai).
 
 ### Model Selection
 
-IONS is model-agnostic. Any model available on OpenRouter works. Recommended options:
+IONS is model-agnostic. Recommended:
 
 | Model | Use case |
 |---|---|
-| `meta-llama/llama-3.1-8b-instruct` | Default — fast, low cost, proves the thesis |
+| `meta-llama/llama-3.1-8b-instruct` | Default — fast, proves the thesis |
 | `meta-llama/llama-3.1-70b-instruct` | Better extraction quality |
-| `anthropic/claude-sonnet-4-5` | Highest accuracy, higher cost |
-| `mistralai/mistral-7b-instruct` | Alternative lightweight |
-| Custom | Any OpenRouter model string |
-
-The model choice affects extraction quality and relationship suggestion accuracy. It does not affect the CBBs or relationships already in the network.
+| `anthropic/claude-sonnet-4-5` | Highest accuracy |
+| Local Ollama model | Zero cost, fully private |
 
 ### IONS Node URL
 
-Default is `http://localhost:8000`. Change this to point to a remote node if you want to query a different node's knowledge.
+Default: `http://localhost:8000`. Change to point at a remote node or the public genesis node at `https://api.ionsprotocol.org`.
 
 ---
 
 ## Generating Relationships
 
-Relationships are what connect CBBs into a traversable network. Without relationships, CBBs are isolated claims that cannot form reasoning paths.
+Relationships connect CBBs into a traversable network. Without relationships, CBBs are isolated claims.
 
 ### From the Workbench
 
 1. Go to **Workbench → Activity tab**
-2. Click **⬡ Generate relationships**
-3. Watch the progress bar — the backend processes CBBs in batches, calling the LLM to find meaningful connections
-4. The done message shows how many relationships were created
+2. Click **⬡ Generate relationships** (100 CBBs) or **⬡ Bulk Generate** (500 CBBs)
+3. Watch the progress bar
+4. Check the relationship count in Node stats
 
-Run this after approving a batch of new CBBs. The system prioritizes CBBs with fewer than 10 relationships, so each run expands coverage evenly.
+Run multiple times to build density. The system prioritizes CBBs with fewer than 3 relationships.
 
-### Via API
+### Target density
 
-```bash
-curl -X POST http://localhost:8000/relationship/generate
-# Returns: {"job_id": "abc123", "status": "running"}
-
-curl http://localhost:8000/relationship/generate/abc123
-# Returns progress and final count
-```
-
-### How many relationships do I need?
-
-- **< 2 per CBB** — very sparse, traversal will find few paths
-- **3-5 per CBB** — functional, paths exist but confidence may be low
-- **6-10 per CBB** — good density, strong multi-hop paths
-- **10+ per CBB** — rich network, high confidence traversal
+| Relationships per CBB | Network quality |
+|---|---|
+| < 2 | Sparse — few traversal paths |
+| 3-5 | Functional — paths exist |
+| 5-10 | Good — strong multi-hop paths |
+| 10+ | Rich — high confidence traversal |
 
 ---
 
 ## Joining the Network
 
-Once your node is running at a public URL, it can participate in the federated IONS network.
-
 ### Make your node public
 
-1. Deploy your node to a server with a public URL
-2. Update `PUBLIC_API_BASE` in `.env` to your public URL:
+1. Deploy to a server with a public URL
+2. Update `.env`:
    ```bash
    PUBLIC_API_BASE=https://your-node.example.com
    ```
 3. Rebuild: `docker compose up -d --build api`
 
-### Register with another node
+### Register with the genesis node
 
 ```bash
-curl -X POST https://known-node.example.com/nodes/register \
+curl -X POST https://api.ionsprotocol.org/nodes/register \
   -H "Content-Type: application/json" \
   -d '{"node_id": "your_node_id", "public_api_base": "https://your-node.example.com"}'
 ```
 
-The remote node will fetch your manifest, verify your node is live, and add you to its registry. Queries on that node will now traverse your CBBs automatically.
-
-### Ask others to register with you
-
-Share your registration endpoint:
-```
-POST https://your-node.example.com/nodes/register
-```
-
-Any node that registers with you will have their CBBs included in your traversal queries.
-
-### Check registered nodes
+### After registering — seed Cognitive Domains
 
 ```bash
-curl http://localhost:8000/nodes
+curl -X POST https://your-node.example.com/routing/domains/seed
+```
+
+This assigns your NSI clusters to Cognitive Domains and embeds them for routing. Required for your node's Cognitive Domain coverage to appear in the network manifest.
+
+---
+
+## API Reference
+
+Full interactive docs at `http://localhost:8000/docs`
+
+### Core endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/cbb` | Publish a CBB |
+| GET | `/cbb` | Search CBBs |
+| POST | `/query` | Run traversal query |
+| GET | `/path/{id}` | Get a saved path |
+| POST | `/feedback` | Submit path feedback |
+| POST | `/nodes/register` | Register a node |
+| GET | `/health` | Node health |
+| GET | `/stats` | Network statistics |
+| GET | `/.well-known/ions-node.json` | Node manifest |
+
+### v0.4 endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/routing/domains` | Cognitive Domain taxonomy |
+| GET | `/routing/health` | Routing confidence and domain weights |
+| GET | `/routing/sessions` | Recent routing sessions |
+| GET | `/routing/nsi-assignments` | NSI cluster to domain assignments |
+| POST | `/routing/domains/seed` | Seed and embed Cognitive Domains |
+| GET | `/routing/conflicts` | Unresolved Conflict Artifacts |
+| GET | `/routing/validation/status` | Validation metrics |
+| GET | `/dedup/status` | Embedding coverage and duplicate queue |
+| POST | `/dedup/embed` | Embed all CBBs for semantic deduplication |
+
+### Query request (v0.4)
+
+```json
+{
+  "query": "How does institutional memory compound competitive advantage?",
+  "intent": "explain",
+  "top_n_paths": 3,
+  "max_depth": 5,
+  "include_contradictions": false,
+  "save_path": true
+}
+```
+
+### Query response (v0.4)
+
+```json
+{
+  "cbb_answer": "...",
+  "session_id": "rsess_abc123",
+  "routing_confidence": 0.48,
+  "paths": [
+    {
+      "path_id": "path_xyz",
+      "path_confidence": 0.68,
+      "path_relevance": 0.36,
+      "path_rank_score": 0.48,
+      "cbb_sequence": ["cbb_001", "cbb_002", "cbb_003"]
+    }
+  ]
+}
 ```
 
 ---
@@ -370,65 +415,40 @@ curl http://localhost:8000/nodes
 ### Node won't start
 
 ```bash
-cd ions-genesis
 docker compose logs api --tail 20
 ```
 
 Common causes:
-- Missing `.env` file — copy `.env.example` to `.env`
-- Database not ready — wait 10 seconds and retry
+- Missing `.env` — copy `.env.example` to `.env`
+- Database not ready — wait 10 seconds, retry
 - Port conflict — change ports in `docker-compose.yml`
 
-### No paths returned for a query
+### No paths returned
 
-The network needs CBBs and relationships in the relevant domain. Check:
-1. Are there published CBBs related to your query? Search in the Graph.
-2. Do those CBBs have relationships? Check relationship count in Node stats.
-3. Run Generate Relationships in the Workbench.
+The network needs CBBs and relationships in the relevant domain:
+1. Check if relevant CBBs exist — search in the Graph
+2. Check relationship count — Node stats
+3. Run Generate Relationships in Workbench
+4. Run Embed Domains and Recluster after adding new content
 
 ### Low path confidence (below 60%)
 
-- Add more CBBs with strong external evidence references
-- Run Generate Relationships to increase network density
-- Try a more specific query that matches your CBB domains
+- Add CBBs with strong external evidence (books, papers, articles score 0.75-0.90)
+- Run Bulk Generate Relationships
+- Try a more specific query matching your CBB domains
 
-### Extraction returns fewer CBBs than expected
+### Low routing confidence (below 0.50)
 
-- Document may be longer than 24,000 characters — paste in sections
-- Try a different model in Settings (70B models extract more precisely)
-- Some documents contain more narrative than assertable claims
+- Run `/routing/domains/seed` to assign NSI clusters to Cognitive Domains
+- Check `/routing/nsi-assignments` for unassigned clusters
+- Manually assign clusters via `POST /routing/nsi-assignments/{label}?domain_id=...`
 
-### Generate Relationships creates 0 new relationships
+### Duplicate CBBs in Workbench
 
-Most CBBs already have 10+ relationships. This means the network is well-connected in those domains. Add CBBs in new domains to expand coverage.
+The Duplicates tab shows near-duplicate pairs. Review side-by-side and choose Keep A, Keep B, or Keep Both. Pairs with similarity > 0.98 are auto-resolved. Run `POST /dedup/embed` to scan the full corpus for duplicates after bulk imports.
 
 ### API key errors
 
-- Verify key is set in Settings
+- Verify key in Settings
 - Check key is valid at openrouter.ai
-- Ensure the selected model is available on your OpenRouter plan
-
----
-
-## API Reference
-
-Full interactive docs at `http://localhost:8000/docs`
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/cbb` | Publish a CBB |
-| GET | `/cbb` | Search CBBs |
-| GET | `/cbb/{id}` | Get a CBB |
-| POST | `/cbb/{id}/deprecate` | Deprecate a CBB |
-| POST | `/relationship` | Create a relationship |
-| POST | `/relationship/generate` | Start relationship generation |
-| GET | `/relationship/generate/{job_id}` | Poll generation status |
-| POST | `/query` | Run traversal query |
-| GET | `/path/{id}` | Get a saved path |
-| GET | `/path` | List saved paths |
-| POST | `/nodes/register` | Register a node |
-| GET | `/nodes` | List registered nodes |
-| POST | `/nodes/{id}/ping` | Health check a node |
-| GET | `/health` | Node health |
-| GET | `/stats` | Network statistics |
-| GET | `/.well-known/ions-node.json` | Node manifest |
+- Ensure selected model is on your OpenRouter plan
