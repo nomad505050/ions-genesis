@@ -112,8 +112,8 @@ async def _save_routing_session(
             "conflicts": 0,
         })
         await db.commit()
-    except Exception:
-        pass  # Routing session failure never blocks query response
+    except Exception as e:
+        print(f"Routing session save error: {e}")
 
 
 def _compute_routing_confidence(top_paths: list) -> Optional[float]:
@@ -296,6 +296,7 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
             )
             db.add(rp)
             try:
+                await db.flush()
                 await db.commit()
                 saved_paths.append(path_id)
                 path["path_id"] = path_id
