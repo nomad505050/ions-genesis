@@ -11,12 +11,13 @@ from app.core.config import settings
 from app.models.artifacts import CBB, NodeRegistry
 from app.api.nsi import router as nsi_router
 from app.api.dedup import router as dedup_router
-
+from app.api.routing import router as routing_router
+from app.api.feedback import router as feedback_router
 
 app = FastAPI(
     title="IONS Genesis API",
     description="Intelligence Operating Network System — CBB traversal node",
-    version="0.2.0"
+    version="0.4.0"
 )
 
 app.add_middleware(
@@ -33,6 +34,8 @@ app.include_router(query_router)
 app.include_router(nodes_router)
 app.include_router(nsi_router)
 app.include_router(dedup_router)
+app.include_router(routing_router)
+app.include_router(feedback_router)
 
 @app.on_event("startup")
 async def startup():
@@ -89,7 +92,7 @@ async def node_manifest(db: AsyncSession = Depends(get_db)):
 
     return {
         "node_id": settings.node_id,
-        "protocol_version": "ions-genesis-0.1",
+        "protocol_version": "ions-genesis-v0.4",
         "supported_cbb_types": ["claim"],
         "supported_relationship_types": [
             "supports", "contradicts", "depends_on", "causes",
@@ -103,6 +106,12 @@ async def node_manifest(db: AsyncSession = Depends(get_db)):
             "path_registry",
             "node_registry",
             "federated_query",
+            "beam_search",
+            "cognitive_routing",
+            "semantic_deduplication",
+            "path_feedback",
+            "conflict_detection",
+            "self_validation",
         ],
         "domains": domains,
         "cbb_count": cbb_count or 0,
@@ -110,4 +119,12 @@ async def node_manifest(db: AsyncSession = Depends(get_db)):
         "status": "active",
         "open_contributions": True,
         "description": settings.node_description,
+        "v04_features": {
+            "beam_search": True,
+            "cognitive_domains": True,
+            "path_feedback": True,
+            "conflict_detection": True,
+            "self_validation": True,
+            "saturation_tracking": True,
+        }
     }

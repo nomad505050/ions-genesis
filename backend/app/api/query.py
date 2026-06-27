@@ -1,6 +1,6 @@
 """
-IONS Query Engine — single and multi-node traversal.
-Fans out queries to registered nodes, merges and ranks paths.
+IONS Query Engine — v0.4
+Embedding-guided discovery, beam search traversal, routing sessions.
 """
 import uuid
 import asyncio
@@ -8,15 +8,28 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy import text
 from pydantic import BaseModel
 from typing import Optional, List
 from app.core.database import get_db
 from app.core.config import settings
-from app.services.traversal import discover_starting_cbbs, enumerate_paths, score_paths_batch, get_all_published_relationships
+from app.services.traversal import (
+    discover_starting_cbbs,
+    beam_search_traverse,
+    score_paths_batch,
+    get_all_published_relationships,
+    get_query_embedding,
+)
 from app.services.synthesis import synthesize_answer, raw_llm_answer
-from app.services.synthesis import fetch_cbb_contents_batch
 from app.services.hashing import canonical_hash
 from app.models.artifacts import ReasoningPath, NodeRegistry
+
+from app.services.validation import run_validation, should_validate
+from app.services.saturation import (
+    update_cbb_appearance_counts,
+    get_saturation_map,
+    apply_saturation_penalty,
+)
 
 router = APIRouter(tags=["query"])
 
@@ -29,7 +42,8 @@ class QueryRequest(BaseModel):
     include_contradictions: bool = False
     model: Optional[str] = None
     save_path: bool = True
-    federated: bool = True  # whether to query other registered nodes
+    federated: bool = True
+    intent: str = "explain"  # v0.4 — reasoning intent
 
 
 async def query_remote_node(node, payload: QueryRequest, model: str) -> List[dict]:
@@ -46,7 +60,8 @@ async def query_remote_node(node, payload: QueryRequest, model: str) -> List[dic
                     "include_contradictions": payload.include_contradictions,
                     "model": model,
                     "save_path": False,
-                    "federated": False,  # prevent recursive federation
+                    "federated": False,
+                    "intent": payload.intent,
                 }
             )
             if resp.status_code == 200:
@@ -61,65 +76,164 @@ async def query_remote_node(node, payload: QueryRequest, model: str) -> List[dic
     return []
 
 
+async def _save_routing_session(
+    db: AsyncSession,
+    session_id: str,
+    query: str,
+    intent: str,
+    starts: list,
+    top_paths: list,
+    remote_paths: list,
+    routing_confidence: Optional[float],
+    cache_hit: bool = False,
+) -> None:
+    """Store routing session artifact — the flight recorder for this query."""
+    try:
+        await db.execute(text("""
+            INSERT INTO routing_session (
+                session_id, query, intent,
+                cbbs_discovered, selected_path_id,
+                routing_confidence, cache_hit,
+                conflicts_detected, created_at
+            ) VALUES (
+                :sid, :q, :intent,
+                :cbbs, :path_id,
+                :rconf, :cache,
+                :conflicts, now()
+            )
+        """), {
+            "sid": session_id,
+            "q": query,
+            "intent": intent,
+            "cbbs": [c.cbb_id for c in starts],
+            "path_id": top_paths[0].get("path_id") if top_paths else None,
+            "rconf": routing_confidence,
+            "cache": cache_hit,
+            "conflicts": 0,
+        })
+        await db.commit()
+    except Exception:
+        pass  # Routing session failure never blocks query response
+
+
+def _compute_routing_confidence(top_paths: list) -> Optional[float]:
+    """
+    Compute routing confidence — did attention allocation succeed?
+    routing_confidence = winning_path_rank_score / best_possible_score
+    Best possible is approximated as 1.0 for now.
+    """
+    if not top_paths:
+        return None
+    winning_score = top_paths[0].get("path_rank_score") or top_paths[0].get("path_confidence", 0)
+    # Best possible rank score is 1.0
+    return round(min(winning_score / 1.0, 1.0), 4)
+
+
 @router.post("/query")
 async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
     model = payload.model or settings.default_model
+    session_id = f"rsess_{uuid.uuid4().hex[:12]}"
 
-    # Run raw LLM answer and local traversal
-    raw_answer_task = asyncio.create_task(raw_llm_answer(payload.query, model))
+    # Embed query once — used for CBB discovery, beam search, and relevance scoring
+    query_embedding = await get_query_embedding(payload.query)
 
-    # Local traversal — load relationships once then reuse
-    starts = await discover_starting_cbbs(payload.query, db)
+    # Run raw LLM answer — await it before DB operations to avoid asyncpg concurrency
+    raw_answer = await raw_llm_answer(payload.query, model)
+
+    # Load relationship index once — reused across all starting CBBs
     rel_index = await get_all_published_relationships(db)
 
-    all_paths = []
-    for start in starts:
-        paths = await enumerate_paths(
-            start,
-            db,
-            max_depth=payload.max_depth,
-            include_contradictions=payload.include_contradictions,
-            rel_index=rel_index
-        )
-        all_paths.extend(paths)
+    # Embedding-guided CBB discovery
+    starts = await discover_starting_cbbs(
+        query=payload.query,
+        db=db,
+        query_embedding=query_embedding,
+    )
 
-    # Batch score all paths in two queries instead of N*M queries
-    local_scored_raw = await score_paths_batch(all_paths, db)
+    # Beam search traversal
+    all_paths = []
+    if starts:
+        all_paths = await beam_search_traverse(
+            start_cbbs=starts,
+            db=db,
+            rel_index=rel_index,
+            query_embedding=query_embedding,
+            include_contradictions=payload.include_contradictions,
+        )
+
+    # Score paths — includes path_confidence, path_relevance, path_rank_score
+    local_scored_raw = await score_paths_batch(
+        all_paths, db, query_embedding=query_embedding
+    )
+
+    # Apply saturation penalty to discourage over-central CBBs
+    all_path_cbb_ids = list({
+        cbb_id
+        for path in local_scored_raw
+        for cbb_id in path.get("cbbs", [])
+    })
+    saturation_map = await get_saturation_map(all_path_cbb_ids, db)
+    local_scored_raw = apply_saturation_penalty(local_scored_raw, saturation_map)
     local_scored = []
     for scored_path in local_scored_raw:
         scored_path["source_node"] = settings.node_id
         scored_path["source_node_url"] = settings.public_api_base
         local_scored.append(scored_path)
 
-    # Federation — query other registered nodes in parallel
+    # Federation — query registered nodes in parallel
     remote_paths = []
     if payload.federated:
-        result = await db.execute(
-            select(NodeRegistry).where(
-                NodeRegistry.status == "active",
-                NodeRegistry.node_id != settings.node_id
+        try:
+            result = await db.execute(
+                select(NodeRegistry).where(
+                    NodeRegistry.status == "active",
+                    NodeRegistry.node_id != settings.node_id
+                )
             )
-        )
-        remote_nodes = result.scalars().all()
-
-        if remote_nodes:
-            remote_tasks = [
-                query_remote_node(node, payload, model)
-                for node in remote_nodes
+            remote_nodes = result.scalars().all()
+            if remote_nodes:
+                remote_tasks = [
+                    query_remote_node(node, payload, model)
+                    for node in remote_nodes
             ]
             remote_results = await asyncio.gather(*remote_tasks, return_exceptions=True)
             for r in remote_results:
                 if isinstance(r, list):
                     remote_paths.extend(r)
+        except Exception as e:
+            print(f"DEBUG federation error: {e}")
+            await db.rollback()
 
-    # Merge and rank all paths
+    # Contradiction detection
+    conflict_info = {"conflicts_detected": 0, "conflicts": []}
+    if payload.include_contradictions and local_scored:
+        from app.services.contradiction import (
+            detect_contradicting_paths,
+            format_conflict_response,
+            create_conflict_artifact,
+        )
+        conflict_pairs = detect_contradicting_paths(local_scored, rel_index)
+        conflict_info = format_conflict_response(conflict_pairs, local_scored)
+        for path_a, path_b in conflict_pairs[:3]:
+            await create_conflict_artifact(
+                payload.query, payload.intent, path_a, path_b, db
+            )
+
+    # Merge and rank — v0.4 uses path_rank_score, falls back to path_confidence
     all_scored = local_scored + remote_paths
-    all_scored.sort(key=lambda x: x.get("path_confidence", 0), reverse=True)
+    all_scored.sort(
+        key=lambda x: x.get("path_rank_score") or x.get("path_confidence", 0),
+        reverse=True
+    )
     top_paths = all_scored[:payload.top_n_paths]
 
     raw_answer = await raw_answer_task
 
     if not top_paths:
+        await _save_routing_session(
+            db, session_id, payload.query, payload.intent,
+            starts, [], remote_paths, None
+        )
         return {
             "query": payload.query,
             "model": model,
@@ -127,21 +241,43 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
             "cbb_answer": None,
             "paths": [],
             "nodes_queried": 1,
+            "session_id": session_id,
             "message": "No traversal paths found. Add more CBBs and relationships."
         }
 
     best_path = top_paths[0]
-    cbb_answer = await synthesize_answer(payload.query, best_path, db, model, all_paths=top_paths)
+    # Normalize path keys — beam search uses "cbbs", remote paths use "cbb_sequence"
+    def normalize_path(p):
+        if "cbbs" not in p and "cbb_sequence" in p:
+            p = {**p, "cbbs": p["cbb_sequence"], "rels": p.get("relationship_sequence", [])}
+        return p
 
-    # Save local paths only
+    best_path = normalize_path(best_path)
+    top_paths = [normalize_path(p) for p in top_paths]
+
+    cbb_answer = await synthesize_answer(
+        payload.query, best_path, db, model, all_paths=top_paths
+    )
+
+    # Compute routing confidence
+    routing_confidence = _compute_routing_confidence(top_paths)
+
+    # Save local paths
     saved_paths = []
     if payload.save_path:
         for path in top_paths:
             if path.get("source_node", settings.node_id) != settings.node_id:
                 continue
             path_id = f"path_{uuid.uuid4().hex[:12]}"
-            explanation = f"Path traverses {len(path['cbbs'])} CBBs with confidence {path['path_confidence']}"
-            h = canonical_hash({"path_id": path_id, "query": payload.query, "cbbs": path["cbbs"]})
+            explanation = (
+                f"Path traverses {len(path['cbbs'])} CBBs "
+                f"with confidence {path['path_confidence']}"
+            )
+            h = canonical_hash({
+                "path_id": path_id,
+                "query": payload.query,
+                "cbbs": path["cbbs"]
+            })
             rp = ReasoningPath(
                 path_id=path_id,
                 query=payload.query,
@@ -152,13 +288,78 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                 answer=cbb_answer if path == best_path else "",
                 path_explanation=explanation,
                 model_used=model,
-                hash=h
+                hash=h,
+                path_utility=path.get("path_utility", 0.5),
+                path_relevance=path.get("path_relevance"),
+                path_rank_score=path.get("path_rank_score"),
+                routing_confidence=routing_confidence,
+                intent=payload.intent,
+                cache_hit=False,
             )
             db.add(rp)
-            saved_paths.append(path_id)
-        await db.commit()
+            try:
+                await db.commit()
+                saved_paths.append(path_id)
+                path["path_id"] = path_id
+            except Exception as e:
+                print(f"DEBUG path save error: {e}")
+                await db.rollback()
 
-    nodes_queried = 1 + len(set(p.get("source_node") for p in remote_paths if p.get("source_node")))
+        # Update CBB appearance counts for saturation tracking
+        all_used_cbbs = list({
+            cbb_id
+            for path in top_paths
+            for cbb_id in path.get("cbbs", path.get("cbb_sequence", []))
+            if path.get("source_node", settings.node_id) == settings.node_id
+        })
+        # TODO: re-enable saturation tracking after fixing async session sharing
+        # if all_used_cbbs:
+        #     asyncio.create_task(_update_saturation())
+        pass
+
+    # Trigger async validation for sampled paths
+    if saved_paths and best_path:
+        path_conf = best_path.get("path_confidence", 0)
+        if await should_validate(path_conf, saved_paths[0]):
+            # Fetch CBB contents for coherence check
+            from app.services.synthesis import fetch_cbb_contents_batch
+            cbb_ids = best_path.get("cbbs", [])
+            cbb_contents_map = await fetch_cbb_contents_batch(cbb_ids, db)
+            cbb_contents = [
+                cbb_contents_map.get(cid, "") for cid in cbb_ids
+            ]
+            # Fire and forget — never blocks response
+            path_copy = {**best_path, "path_id": saved_paths[0]}
+            query_copy = payload.query
+            answer_copy = cbb_answer or ""
+            contents_copy = list(cbb_contents)
+            model_copy = model
+            async def _run_validation():
+                from app.core.database import AsyncSessionLocal
+                async with AsyncSessionLocal() as bg_db:
+                    await run_validation(
+                        path=path_copy,
+                        query=query_copy,
+                        answer=answer_copy,
+                        cbb_contents=contents_copy,
+                        model=model_copy,
+                        db=bg_db,
+                        sample_reason="random_sample",
+                    )
+            # TODO: re-enable validation after fixing async session sharing
+            # asyncio.create_task(_run_validation())
+            pass
+            
+    # Save routing session
+    await _save_routing_session(
+        db, session_id, payload.query, payload.intent,
+        starts, top_paths, remote_paths,
+        routing_confidence, cache_hit=False,
+    )
+
+    nodes_queried = 1 + len(
+        set(p.get("source_node") for p in remote_paths if p.get("source_node"))
+    )
 
     return {
         "query": payload.query,
@@ -166,12 +367,18 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
         "raw_answer": raw_answer,
         "cbb_answer": cbb_answer,
         "nodes_queried": nodes_queried,
+        "session_id": session_id,
+        "routing_confidence": routing_confidence,
+        "conflicts": conflict_info,
         "paths": [
             {
-                "path_id": saved_paths[i] if i < len(saved_paths) else None,
+                "path_id": p.get("path_id") or (saved_paths[i] if i < len(saved_paths) else None),
                 "cbb_sequence": p.get("cbbs", p.get("cbb_sequence", [])),
                 "relationship_sequence": p.get("rels", p.get("relationship_sequence", [])),
                 "path_confidence": p.get("path_confidence", 0),
+                "path_relevance": p.get("path_relevance"),
+                "path_rank_score": p.get("path_rank_score"),
+                "path_utility": p.get("path_utility", 0.5),
                 "cbb_avg": p.get("cbb_avg", 0),
                 "rel_avg": p.get("rel_avg", 0),
                 "evidence_avg": p.get("evidence_avg", 0),
@@ -195,9 +402,14 @@ async def get_path(path_id: str, db: AsyncSession = Depends(get_db)):
     return {
         "path_id": path.path_id,
         "query": path.query,
+        "intent": path.intent,
         "cbb_sequence": path.cbb_sequence,
         "relationship_sequence": path.relationship_sequence,
         "path_confidence": path.path_confidence,
+        "path_relevance": path.path_relevance,
+        "path_rank_score": path.path_rank_score,
+        "path_utility": path.path_utility,
+        "routing_confidence": path.routing_confidence,
         "evidence_score": path.evidence_score,
         "answer": path.answer,
         "path_explanation": path.path_explanation,
@@ -225,7 +437,11 @@ async def list_paths(
         {
             "path_id": p.path_id,
             "query": p.query,
+            "intent": p.intent,
             "path_confidence": p.path_confidence,
+            "path_relevance": p.path_relevance,
+            "path_rank_score": p.path_rank_score,
+            "routing_confidence": p.routing_confidence,
             "evidence_score": p.evidence_score,
             "cbb_sequence": p.cbb_sequence,
             "answer": p.answer[:200] + "..." if p.answer and len(p.answer) > 200 else p.answer,

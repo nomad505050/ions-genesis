@@ -148,7 +148,7 @@ export default function NodePage() {
         <div className="grid-3">
           {[
             { value: stats.cbbs > 0 ? stats.cbbs.toLocaleString() : "—", label: "Published CBBs", delta: "live from network" },
-            { value: "—", label: "NSI Clusters", delta: "auto-grouped by LLM" },
+            { value: "—", label: "Cognitive Subdomains", delta: "auto-grouped by LLM" },
             { value: "0.547", label: "Avg Path Confidence", delta: "threshold: 0.600" },
           ].map((s) => (
             <div key={s.label} className="stat-card">

@@ -29,11 +29,24 @@ type PathResult = {
   cbb_sequence: string[];
   relationship_sequence: string[];
   path_confidence: number;
+  path_relevance?: number;
+  path_rank_score?: number;
+  path_utility?: number;
 };
 
 type QueryResult = {
   cbb_answer: string;
   paths: PathResult[];
+  session_id?: string;
+  routing_confidence?: number;
+  conflicts?: {
+    conflicts_detected: number;
+    conflicts: {
+      path_a_cbbs: string[];
+      path_b_cbbs: string[];
+      message: string;
+    }[];
+  };
 };
 
 function confColor(c: number) {
@@ -55,6 +68,7 @@ export default function ExplorerPage() {
   const [error, setError] = useState("");
   const [nodeStats, setNodeStats] = useState({ cbbs: 0, rels: 0 });
   const [liveCBBs, setLiveCBBs] = useState("—");
+  const [feedbackSent, setFeedbackSent] = useState<Record<string, number>>({});
 
   // Fetch live node stats
   useEffect(() => {
@@ -87,6 +101,18 @@ export default function ExplorerPage() {
     fetchStats();
   }, []);
 
+  async function submitFeedback(pathId: string, rating: number, q: string) {
+    if (!pathId || feedbackSent[pathId]) return;
+    try {
+      await fetch(`${getIonsAPI()}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path_id: pathId, rating, query: q }),
+      });
+      setFeedbackSent(prev => ({ ...prev, [pathId]: rating }));
+    } catch { /* silent */ }
+  }
+  
   async function runQuery(q: string) {
     if (!q.trim()) return;
     setQuery(q);
@@ -119,7 +145,7 @@ export default function ExplorerPage() {
       {/* Topbar */}
       <div className="topbar">
         <span className="topbar-title">Explorer</span>
-        <span className="topbar-sub">Query the network · see reasoning paths · CBBs across NSI clusters</span>
+        <span className="topbar-sub">Query the network · see reasoning paths · CBBs across Cognitive Subdomains</span>
         <div className="topbar-actions">
           <a href="/contribute" className="btn btn-ghost">+ Add CBB</a>
           <a href="/workbench" className="btn btn-primary">Workbench</a>
@@ -230,16 +256,78 @@ export default function ExplorerPage() {
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: confColor(conf) }}>
                     {(conf * 100).toFixed(1)}% confidence
                   </span>
+                  {result.routing_confidence && (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--slate2)" }}>
+                      routing: {(result.routing_confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
                   <span className={`tag tag-${confLabel(conf) === "high" ? "emerald" : confLabel(conf) === "moderate" ? "amber" : "red"}`}>
                     {confLabel(conf)}
                   </span>
                 </div>
               </div>
-
+              {/* Answer text */}
               <div style={{ fontSize: "14px", color: "var(--text2)", lineHeight: 1.75, whiteSpace: "pre-wrap" }}>
                 {result.cbb_answer}
               </div>
 
+              {/* Conflict warning */}
+              {result.conflicts && result.conflicts.conflicts_detected > 0 && (
+                <div style={{
+                  marginTop: "12px",
+                  padding: "10px 14px",
+                  background: "rgba(251,191,36,0.08)",
+                  border: "1px solid rgba(251,191,36,0.3)",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  color: "var(--amber)",
+                }}>
+                  ⚠ The network detected {result.conflicts.conflicts_detected} contradicting reasoning path{result.conflicts.conflicts_detected > 1 ? "s" : ""}. Alternative perspectives exist in the network.
+                </div>
+              )}
+
+              {/* Feedback */}
+              {topPath?.path_id && (
+                <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "11px", color: "var(--slate2)" }}>Was this useful?</span>
+                  <button
+                    onClick={() => submitFeedback(topPath.path_id, 1, query)}
+                    style={{
+                      padding: "4px 12px",
+                      background: feedbackSent[topPath.path_id] === 1 ? "rgba(52,211,153,0.15)" : "var(--bg3)",
+                      border: `1px solid ${feedbackSent[topPath.path_id] === 1 ? "var(--emerald)" : "var(--border)"}`,
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                      color: feedbackSent[topPath.path_id] === 1 ? "var(--emerald)" : "var(--slate)",
+                      cursor: feedbackSent[topPath.path_id] ? "default" : "pointer",
+                    }}
+                  >
+                    👍
+                  </button>
+                  <button
+                    onClick={() => submitFeedback(topPath.path_id, -1, query)}
+                    style={{
+                      padding: "4px 12px",
+                      background: feedbackSent[topPath.path_id] === -1 ? "rgba(248,113,113,0.15)" : "var(--bg3)",
+                      border: `1px solid ${feedbackSent[topPath.path_id] === -1 ? "var(--red)" : "var(--border)"}`,
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                      color: feedbackSent[topPath.path_id] === -1 ? "var(--red)" : "var(--slate)",
+                      cursor: feedbackSent[topPath.path_id] ? "default" : "pointer",
+                    }}
+                  >
+                    👎
+                  </button>
+                  {feedbackSent[topPath.path_id] && (
+                    <span style={{ fontSize: "11px", color: "var(--slate2)" }}>Thanks — feedback recorded</span>
+                  )}
+                  {result.session_id && (
+                    <span style={{ fontSize: "10px", color: "var(--slate2)", fontFamily: "var(--font-mono)", marginLeft: "auto" }}>
+                      {result.session_id}
+                    </span>
+                  )}
+                </div>
+              )}
               {/* Reasoning path */}
               {topPath && topPath.cbb_sequence.length > 0 && (
                 <div style={{ marginTop: "16px" }}>
@@ -286,7 +374,7 @@ export default function ExplorerPage() {
                         Alternative paths
                       </div>
                       {result.paths.slice(1).map((p, i) => (
-                        <div key={p.path_id} style={{
+                        <div key={`alt-path-${i}`} style={{
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
@@ -315,7 +403,7 @@ export default function ExplorerPage() {
             <div className="empty-icon">⬡</div>
             <div className="empty-text">Query the network</div>
             <div className="empty-sub">
-              The network traverses {liveCBBs} CBBs across NSI clusters<br />
+              The network traverses {liveCBBs} CBBs across Cognitive Subdomains<br />
               and returns grounded answers with visible reasoning paths
             </div>
           </div>

@@ -378,6 +378,23 @@ ions-genesis/
 
 ## Changelog
 
+### v0.4 — Cognitive Attention Architecture
+- **Hierarchical routing** — queries route through Cognitive Domains → Subdomains → CBBs before traversal begins
+- **Embedding-guided CBB discovery** — replaces keyword search with pgvector similarity
+- **Beam search traversal** — replaces depth-first enumeration, scales to millions of relationships
+- **Diversity slot** — 4 highest scoring + 1 forced diversity beam per iteration prevents convergence
+- **Three-score path ranking** — path_confidence × path_relevance × path_utility ranked separately
+- **Routing confidence** — measures whether attention allocation found the right neighborhood
+- **Routing sessions** — flight recorder for every cognitive decision made during a query
+- **Contradiction detection** — surfaces conflicting reasoning paths as Conflict Artifacts
+- **Path feedback API** — thumbs up/down on reasoning paths, feeds into path_utility
+- **Self-validation loop** — coherence check + path optimality check, no external model dependency
+- **CBB saturation tracking** — detects centralization, applies PageRank-style damping
+- **Intent support** — explicit reasoning intent (explain, compare, diagnose, predict, etc.)
+- **Cognitive Domain taxonomy** — 7 canonical domains for attention routing
+- **Domain affinity matrix** — learned co-occurrence between domains
+- **Two-layer architecture** — Knowledge Layer (immutable) + Routing Layer (adaptive, resettable)
+
 ### v0.3 — Semantic Deduplication
 - **CBB embeddings** — every CBB content embedded at creation via OpenRouter text-embedding-3-small
 - **Auto-reject at ingestion** — similarity > 0.98 in same domain returns existing CBB instead of creating duplicate

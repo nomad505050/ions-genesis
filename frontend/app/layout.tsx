@@ -59,7 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
 
               <div className="stat-row">
-                <span className="stat-label">NSIs</span>
+                <span className="stat-label">Subdomains</span>
                 <span className="stat-value">
                   <span id="live-clusters">—</span>
                 </span>

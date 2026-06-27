@@ -202,10 +202,10 @@ export default function GraphPage() {
   return (
     <>
       <div className="topbar">
-        <span className="topbar-title">Graph</span>
+        <span className="topbar-title">Knowledge Graph</span>
         <span className="topbar-sub">
           {view === "nsi"
-            ? `${nsis.length} NSI clusters · ${totalCBBs.toLocaleString()} CBBs · ${nsis.reduce((s, n) => s + n.subdomains.length, 0)} sub-domains`
+            ? `${nsis.length} Cognitive Subdomains · ${totalCBBs.toLocaleString()} CBBs · ${nsis.reduce((s, n) => s + n.subdomains.length, 0)} domains`
             : view === "subdomains"
             ? `${selectedNSI?.displayName} · ${selectedNSI?.subdomains.length} sub-domains · ${selectedNSI?.totalCount} CBBs`
             : `${selectedSubdomain?.displayName} · ${selectedSubdomain?.count} CBBs`}
@@ -228,7 +228,7 @@ export default function GraphPage() {
         {view !== "nsi" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" }}>
             <button onClick={backToNSI} style={{ background: "none", border: "none", color: "var(--indigo2)", cursor: "pointer", fontSize: "12px", padding: 0, fontFamily: "var(--font-display)" }}>
-              All NSIs
+              All Subdomains
             </button>
             {selectedNSI && <>
               <span style={{ color: "var(--slate2)" }}>→</span>
@@ -250,8 +250,8 @@ export default function GraphPage() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder={
-            view === "nsi" ? "Filter NSI clusters..." :
-            view === "subdomains" ? "Filter sub-domains..." :
+            view === "nsi" ? "Filter Cognitive Subdomains..." :
+            view === "subdomains" ? "Filter subdomains..." :
             "Search CBBs..."
           }
           style={{ maxWidth: "400px" }}
@@ -375,7 +375,7 @@ export default function GraphPage() {
                         <span style={{ color: "var(--slate2)" }}>·</span>
                         <span style={{ fontFamily: "var(--font-mono)" }}>{nsi.totalCount} CBBs</span>
                         <span style={{ color: "var(--slate2)" }}>·</span>
-                        <span style={{ color: "var(--slate2)" }}>{nsi.subdomains.length} sub-domains</span>
+                        <span style={{ color: "var(--slate2)" }}>{nsi.subdomains.length} subdomains</span>
                         <span style={{ color: "var(--slate2)", fontSize: "11px" }}>click to explore →</span>
                       </div>
                     );
@@ -393,7 +393,7 @@ export default function GraphPage() {
                 listStyle: "none", userSelect: "none",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <span style={{ color: "var(--indigo2)", fontWeight: 600 }}>NSI Clusters</span>
+                  <span style={{ color: "var(--indigo2)", fontWeight: 600 }}>Cognitive Subdomains</span>
                   <span className="tag tag-indigo">{filteredNSIs.length}</span>
                 </div>
                 <span style={{ color: "var(--slate2)", fontSize: "11px" }}>click to expand ▾</span>
