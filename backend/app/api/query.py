@@ -371,40 +371,40 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                         print(f"Validation error: {e}")
                 asyncio.create_task(_run_validation_bg())    
  
-    # Save routing session as background task
+    # Save routing session using raw asyncpg to avoid greenlet issues
     async def _save_session():
-        from app.core.database import AsyncSessionLocal
         import json as _json
+        import asyncpg
+        import os
         try:
-            async with AsyncSessionLocal() as rs_db:
-                await rs_db.execute(text("""
+            db_url = os.environ.get("DATABASE_URL", "postgresql://ions:ions@postgres:5432/ions")
+            # Convert SQLAlchemy URL to asyncpg URL
+            conn_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql://", "postgresql://")
+            conn = await asyncpg.connect(conn_url)
+            try:
+                await conn.execute("""
                     INSERT INTO routing_session (
                         session_id, query, intent,
                         nodes_considered, domains_considered, subdomains_considered,
                         cbbs_discovered, selected_path_id,
                         routing_confidence, cache_hit,
                         conflicts_detected, created_at
-                    ) VALUES (
-                        :sid, :q, :intent,
-                        :nodes, :domains, :subdomains,
-                        :cbbs, :path_id,
-                        :rconf, :cache,
-                        :conflicts, now()
-                    )
-                """), {
-                    "sid": session_id,
-                    "q": payload.query,
-                    "intent": payload.intent,
-                    "nodes": "[]",
-                    "domains": "[]",
-                    "subdomains": "[]",
-                    "cbbs": _json.dumps([c.cbb_id for c in starts]),
-                    "path_id": top_paths[0].get("path_id") if top_paths else None,
-                    "rconf": routing_confidence,
-                    "cache": False,
-                    "conflicts": 0,
-                })
-                await rs_db.commit()
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
+                """,
+                    session_id,
+                    payload.query,
+                    payload.intent,
+                    "[]",
+                    "[]",
+                    "[]",
+                    _json.dumps([c.cbb_id for c in starts]),
+                    top_paths[0].get("path_id") if top_paths else None,
+                    routing_confidence,
+                    False,
+                    0,
+                )
+            finally:
+                await conn.close()
         except Exception as e:
             print(f"ROUTING SESSION ERROR: {e}")
     asyncio.create_task(_save_session())
