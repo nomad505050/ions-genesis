@@ -47,9 +47,9 @@ class QueryRequest(BaseModel):
 
 
 async def query_remote_node(node, payload: QueryRequest, model: str) -> List[dict]:
-    """Query a remote node and return its paths."""
+    """Query a remote node — fully isolated, never touches local DB."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 f"{node.public_api_base.rstrip('/')}/query",
                 json={
@@ -71,8 +71,12 @@ async def query_remote_node(node, payload: QueryRequest, model: str) -> List[dic
                     path["source_node"] = node.node_id
                     path["source_node_url"] = node.public_api_base
                 return paths
-    except Exception:
-        pass
+    except httpx.TimeoutException:
+        print(f"Federation timeout: {node.node_id}")
+    except httpx.ConnectError:
+        print(f"Federation unreachable: {node.node_id}")
+    except Exception as e:
+        print(f"Federation error ({node.node_id}): {type(e).__name__}")
     return []
 
 
@@ -179,7 +183,7 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
         scored_path["source_node"] = settings.node_id
         scored_path["source_node_url"] = settings.public_api_base
         local_scored.append(scored_path)
-
+        
     # Federation — query registered nodes in parallel
     remote_paths = []
     if payload.federated:
@@ -195,11 +199,13 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                 remote_tasks = [
                     query_remote_node(node, payload, model)
                     for node in remote_nodes
-            ]
-            remote_results = await asyncio.gather(*remote_tasks, return_exceptions=True)
-            for r in remote_results:
-                if isinstance(r, list):
-                    remote_paths.extend(r)
+                ]
+                remote_results = await asyncio.gather(
+                    *remote_tasks, return_exceptions=True
+                )
+                for r in remote_results:
+                    if isinstance(r, list):
+                        remote_paths.extend(r)
         except Exception as e:
             print(f"DEBUG federation error: {e}")
             await db.rollback()
