@@ -227,8 +227,6 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
     )
     top_paths = all_scored[:payload.top_n_paths]
 
-    raw_answer = await raw_answer_task
-
     if not top_paths:
         await _save_routing_session(
             db, session_id, payload.query, payload.intent,
@@ -317,39 +315,14 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
         #     asyncio.create_task(_update_saturation())
         pass
 
-    # Trigger async validation for sampled paths
-    if saved_paths and best_path:
-        path_conf = best_path.get("path_confidence", 0)
-        if await should_validate(path_conf, saved_paths[0]):
-            # Fetch CBB contents for coherence check
-            from app.services.synthesis import fetch_cbb_contents_batch
-            cbb_ids = best_path.get("cbbs", [])
-            cbb_contents_map = await fetch_cbb_contents_batch(cbb_ids, db)
-            cbb_contents = [
-                cbb_contents_map.get(cid, "") for cid in cbb_ids
-            ]
-            # Fire and forget — never blocks response
-            path_copy = {**best_path, "path_id": saved_paths[0]}
-            query_copy = payload.query
-            answer_copy = cbb_answer or ""
-            contents_copy = list(cbb_contents)
-            model_copy = model
-            async def _run_validation():
-                from app.core.database import AsyncSessionLocal
-                async with AsyncSessionLocal() as bg_db:
-                    await run_validation(
-                        path=path_copy,
-                        query=query_copy,
-                        answer=answer_copy,
-                        cbb_contents=contents_copy,
-                        model=model_copy,
-                        db=bg_db,
-                        sample_reason="random_sample",
-                    )
-            # TODO: re-enable validation after fixing async session sharing
-            # asyncio.create_task(_run_validation())
-            pass
-            
+        # Trigger async validation for sampled paths
+        # TODO: re-enable after fixing async session sharing
+        # if saved_paths and best_path:
+        #     ...
+        # TODO: re-enable validation after fixing async session sharing
+        # asyncio.create_task(_run_validation())
+        pass
+        
     # Save routing session
     await _save_routing_session(
         db, session_id, payload.query, payload.intent,
