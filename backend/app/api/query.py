@@ -371,16 +371,17 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                         print(f"Validation error: {e}")
                 asyncio.create_task(_run_validation_bg())    
  
-    # Save routing session using raw asyncpg to avoid greenlet issues
+    # Extract CBB IDs before task (CBB objects detach after session closes)
+    start_cbb_ids = [c.cbb_id for c in starts]
+    selected_path_id = top_paths[0].get("path_id") if top_paths else None
+
     async def _save_session():
         import json as _json
         import asyncpg
         import os
         try:
             db_url = os.environ.get("DATABASE_URL", "postgresql://ions:ions@postgres:5432/ions")
-            # Convert SQLAlchemy URL to asyncpg URL
-            conn_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql://", "postgresql://")
-            conn = await asyncpg.connect(conn_url)
+            conn = await asyncpg.connect(db_url)
             try:
                 await conn.execute("""
                     INSERT INTO routing_session (
@@ -397,8 +398,8 @@ async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
                     "[]",
                     "[]",
                     "[]",
-                    _json.dumps([c.cbb_id for c in starts]),
-                    top_paths[0].get("path_id") if top_paths else None,
+                    _json.dumps(start_cbb_ids),
+                    selected_path_id,
                     routing_confidence,
                     False,
                     0,
